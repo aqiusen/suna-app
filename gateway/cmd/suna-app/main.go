@@ -86,7 +86,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "suna-app could not configure the Runtime bridge")
 		os.Exit(1)
 	}
-	browserBridge, err := bridge.New(bridge.RuntimeConnector{Manager: connections}, bridge.Config{})
+	bridgeCfg := bridge.Config{}
+	if !noOpen {
+		// 关窗口后 SSE 会断；2 秒无订阅即拆掉 bridge 客户端，再触发 empty idle。
+		bridgeCfg.ClientIdleTimeout = 2 * time.Second
+	}
+	browserBridge, err := bridge.New(bridge.RuntimeConnector{Manager: connections}, bridgeCfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "suna-app could not configure the browser bridge")
 		os.Exit(1)
@@ -115,7 +120,7 @@ func main() {
 	}
 
 	logger := desktop.NewLogger()
-	openURL := desktop.PublicOpenURL(actualAddress)
+	openURL := desktop.DesktopOpenURL(actualAddress)
 	logger.Info("suna-app gateway started", "version", buildVersion, "address", actualAddress, "open_url", openURL, "suna_binary", cfg.SunaBinary, "log", desktop.LogPath())
 	if !noOpen {
 		// 关窗口后浏览器会断开 SSE/bridge；稍等避免刷新误杀，再停 Gateway 和 daemon。
@@ -204,7 +209,7 @@ func listenWithFallback(address string, allowFallback bool) (net.Listener, error
 		}
 	}
 	if isSunaAppRunning(probeURL) {
-		return nil, instanceRunningError{OpenURL: desktop.PublicOpenURL(address)}
+		return nil, instanceRunningError{OpenURL: desktop.DesktopOpenURL(address)}
 	}
 	// 其他程序占用了默认端口：回退随机端口，实际地址由启动日志告知用户。
 	// 回退保持与请求地址相同的监听范围（loopback 或全网卡）。

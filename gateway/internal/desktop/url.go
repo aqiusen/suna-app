@@ -22,6 +22,15 @@ func PublicOpenURL(listenAddr string) string {
 	return "http://" + net.JoinHostPort(host, port) + "/"
 }
 
+// DesktopOpenURL 给 --app 窗口用，带 desktop=1，关窗口时前端会立刻通知 Gateway 停 daemon。
+func DesktopOpenURL(listenAddr string) string {
+	base := PublicOpenURL(listenAddr)
+	if strings.Contains(base, "?") {
+		return base + "&desktop=1"
+	}
+	return strings.TrimRight(base, "/") + "/?desktop=1"
+}
+
 func validateOpenURL(target string) error {
 	parsed, err := url.Parse(target)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {

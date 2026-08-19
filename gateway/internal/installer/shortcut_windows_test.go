@@ -5,6 +5,7 @@ package installer
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 
 	"github.com/go-ole/go-ole"
@@ -43,9 +44,35 @@ func TestWriteShortcutCreatesLnk(t *testing.T) {
 	}
 }
 
+func TestWriteShortcutFromBackgroundGoroutine(t *testing.T) {
+	dir := t.TempDir()
+	lnk := filepath.Join(dir, "Suna.lnk")
+	target := filepath.Join(dir, "suna-app.exe")
+	if err := os.WriteFile(target, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		goruntime.LockOSThread()
+		defer goruntime.UnlockOSThread()
+		if err := initCOM(); err != nil {
+			done <- err
+			return
+		}
+		defer ole.CoUninitialize()
+		done <- writeShortcut(lnk, target, dir)
+	}()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(lnk); err != nil || info.Size() == 0 {
+		t.Fatalf("background shortcut missing: %v", err)
+	}
+}
+
 func oleInitForTest(t *testing.T) error {
 	t.Helper()
-	if err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED); err != nil {
+	if err := initCOM(); err != nil {
 		return err
 	}
 	t.Cleanup(ole.CoUninitialize)

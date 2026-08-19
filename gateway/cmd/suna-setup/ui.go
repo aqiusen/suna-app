@@ -44,6 +44,7 @@ var (
 	procPostQuitMessage      = user32.NewProc("PostQuitMessage")
 	procSetWindowTextW       = user32.NewProc("SetWindowTextW")
 	procSendMessageW         = user32.NewProc("SendMessageW")
+	procPostMessageW         = user32.NewProc("PostMessageW")
 	procGetSystemMetrics     = user32.NewProc("GetSystemMetrics")
 	procGetModuleHandleW     = kernel32.NewProc("GetModuleHandleW")
 	procInitCommonControlsEx = comctl32.NewProc("InitCommonControlsEx")
@@ -199,7 +200,9 @@ func (w *progressWindow) quit() {
 	if w == nil || w.hwnd == 0 {
 		return
 	}
-	_, _, _ = procPostQuitMessage.Call(0)
+	// PostQuitMessage 只作用于调用线程。安装在后台 goroutine 里跑，
+	// 必须给窗口发 WM_CLOSE，主线程的 GetMessage 才会退出。
+	_, _, _ = procPostMessageW.Call(uintptr(w.hwnd), wmClose, 0, 0)
 }
 
 func messageBox(text string, style uintptr) {

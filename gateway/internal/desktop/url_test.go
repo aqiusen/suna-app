@@ -23,6 +23,13 @@ func TestPublicOpenURLRewritesUnspecifiedAndLoopback(t *testing.T) {
 	}
 }
 
+func TestDesktopOpenURLMarksDesktopShell(t *testing.T) {
+	got := DesktopOpenURL("127.0.0.1:7633")
+	if got != "http://127.0.0.1:7633/?desktop=1" {
+		t.Fatalf("DesktopOpenURL() = %q", got)
+	}
+}
+
 func TestValidateOpenURLRejectsNonHTTP(t *testing.T) {
 	t.Parallel()
 

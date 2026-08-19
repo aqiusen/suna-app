@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/alanchenchen/suna-app/gateway/internal/installer"
@@ -21,6 +22,8 @@ func main() {
 	}
 
 	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 		defer ui.quit()
 		dest := installer.DefaultDir()
 		ui.set(15, "正在复制程序和 Runtime…")

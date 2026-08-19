@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
@@ -32,7 +33,11 @@ func CreateShortcuts(installDir string) error {
 		filepath.Join(desktop, "Suna.lnk"),
 		startMenu,
 	}
-	if err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED); err != nil {
+	// COM 公寓绑定在 OS 线程上。安装器在 goroutine 里跑时，不 LockOSThread
+	// 会被调度到未 CoInitialize 的线程，WScript.Shell 报「尚未调用 CoInitialize」。
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if err := initCOM(); err != nil {
 		return fmt.Errorf("init COM: %w", err)
 	}
 	defer ole.CoUninitialize()
@@ -77,6 +82,21 @@ func writeShortcut(lnk, target, workDir string) error {
 		return fmt.Errorf("save shortcut %s: %w", lnk, err)
 	}
 	return nil
+}
+
+func initCOM() error {
+	err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
+	if err == nil {
+		return nil
+	}
+	if retry := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED); retry == nil {
+		return nil
+	}
+	// 本线程已初始化时继续用现成公寓即可。
+	if oleErr, ok := err.(*ole.OleError); ok && (oleErr.Code() == 0x00000001 || oleErr.Code() == 0x80010106) {
+		return nil
+	}
+	return err
 }
 
 func userDesktop() (string, error) {
