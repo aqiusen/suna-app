@@ -29,6 +29,8 @@ type Server struct {
 	// 同源"放宽为"任意同源"——浏览器仍无法跨站调用，但可信边界从本机扩展到
 	// 监听网段（局域网 / Tailscale 虚拟网）。
 	allowRemote bool
+	// onShutdown 由进程入口注入；仅 loopback 的 POST /api/v1/shutdown 会触发。
+	onShutdown func()
 
 	probeMu       sync.Mutex
 	lastProbe     probeResult
@@ -55,7 +57,7 @@ func NewServer(prober RuntimeProber, probeTimeout time.Duration, services ...*br
 	if len(services) != 0 {
 		service = services[0]
 	}
-	return newServer(prober, probeTimeout, service, false)
+	return newServer(prober, probeTimeout, service, false, nil)
 }
 
 // NewServerWithBridge makes the browser bridge dependency explicit for callers
@@ -63,14 +65,20 @@ func NewServer(prober RuntimeProber, probeTimeout time.Duration, services ...*br
 // 传 true 表示监听非 loopback 地址（远程模式，见 Server.allowRemote 注释）。
 func NewServerWithBridge(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote ...bool) http.Handler {
 	remote := len(allowRemote) > 0 && allowRemote[0]
-	return newServer(prober, probeTimeout, service, remote)
+	return newServer(prober, probeTimeout, service, remote, nil)
 }
 
-func newServer(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote bool) http.Handler {
-	s := &Server{prober: prober, probeTimeout: probeTimeout, bridge: service, allowRemote: allowRemote}
+// NewServerWithLifecycle 与 NewServerWithBridge 相同，并注册本机退出回调。
+func NewServerWithLifecycle(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote bool, onShutdown func()) http.Handler {
+	return newServer(prober, probeTimeout, service, allowRemote, onShutdown)
+}
+
+func newServer(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote bool, onShutdown func()) http.Handler {
+	s := &Server{prober: prober, probeTimeout: probeTimeout, bridge: service, allowRemote: allowRemote, onShutdown: onShutdown}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/v1/runtime/status", s.runtimeStatus)
+	mux.HandleFunc("POST /api/v1/shutdown", s.handleShutdown)
 	if service != nil {
 		mux.HandleFunc("POST /api/v1/bridge/connect", s.bridgeConnect)
 		mux.HandleFunc("POST /api/v1/bridge/{id}/rpc", s.bridgeRPC)
@@ -78,6 +86,33 @@ func newServer(prober RuntimeProber, probeTimeout time.Duration, service *bridge
 		mux.HandleFunc("DELETE /api/v1/bridge/{id}", s.bridgeDisconnect)
 	}
 	return securityHeaders(mux)
+}
+
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	// 关闭必须由坐在这台电脑前的人发起；局域网/手机远程一律 403。
+	if !requestIsLoopback(r) {
+		bridgeError(w, http.StatusForbidden, "shutdown_denied", "Shutdown is only allowed from this computer.")
+		return
+	}
+	if !s.sameOriginUnsafe(r) {
+		bridgeError(w, http.StatusForbidden, "origin_denied", "Request origin is not allowed.")
+		return
+	}
+	if s.onShutdown == nil {
+		bridgeError(w, http.StatusNotImplemented, "shutdown_unavailable", "This process does not support shutdown.")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "stopping"})
+	go s.onShutdown()
+}
+
+func requestIsLoopback(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

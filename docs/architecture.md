@@ -84,3 +84,20 @@ Runtime speaks protocol 0.3
 ```
 
 A release embeds the built frontend assets in the `suna-app` Gateway artifact. It never embeds the frontend in the `suna` Runtime artifact.
+
+## Desktop bundle topology
+
+The desktop increment ships the two official binaries **side by side**. The Gateway still does not import Runtime packages; it locates a bundled `runtime/suna` (or `Contents/Resources/runtime/suna` in a macOS `.app`) and runs the public `suna serve --json` flow.
+
+```text
+suna-app.exe / Suna.app
+        │
+        ├─ HTTP + SSE to the system browser
+        └─ exec bundled runtime/suna serve --json
+                    │
+                    └─ loopback TCP protocol (unchanged)
+```
+
+API keys stay in the Runtime data directory (`~/.suna/credentials.toml`) via `config.set`. App logs go to `~/.suna-app/logs/app.log`.
+
+Build with `scripts/build-desktop.sh` or `scripts/build-desktop.ps1` and `SUNA_RUNTIME` pointing at a prebuilt Runtime binary.

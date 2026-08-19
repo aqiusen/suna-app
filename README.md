@@ -74,6 +74,29 @@ Suna App:     v0.x.y
 
 Compatibility is determined by the public Runtime protocol and advertised capabilities, not by matching application version numbers. Each Suna App release states its supported Runtime protocol versions.
 
+## Desktop bundle
+
+Ship the Gateway and a prebuilt Runtime in one zip / `.app`. After install the user double-clicks, the system browser opens, and API keys are entered in Settings. `suna` does not need to be on `PATH`.
+
+```powershell
+$env:SUNA_RUNTIME = "C:\path\to\suna.exe"
+.\scripts\build-desktop.ps1 -Version v0.1.0 -Goarch amd64
+```
+
+```bash
+SUNA_RUNTIME=/path/to/suna ./scripts/build-desktop.sh v0.1.0 darwin arm64
+```
+
+Layout:
+
+```text
+Windows:  suna-app.exe + runtime/suna.exe
+macOS:    Suna.app/Contents/MacOS/suna-app
+          Suna.app/Contents/Resources/runtime/suna
+```
+
+Closing the browser tab does not quit the Gateway. Use Settings → Connection → Quit app. Logs: `~/.suna-app/logs/app.log`.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

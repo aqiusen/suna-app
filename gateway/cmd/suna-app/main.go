@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -16,17 +15,29 @@ import (
 
 	"github.com/alanchenchen/suna-app/gateway/internal/bridge"
 	"github.com/alanchenchen/suna-app/gateway/internal/config"
+	"github.com/alanchenchen/suna-app/gateway/internal/desktop"
 	"github.com/alanchenchen/suna-app/gateway/internal/httpapi"
 	"github.com/alanchenchen/suna-app/gateway/internal/runtime"
 	"github.com/alanchenchen/suna-app/gateway/internal/webassets"
 )
 
+// instanceRunningError 表示默认端口上已有本进程；调用方应打开已有 UI 而不是再起一个 Gateway。
+type instanceRunningError struct {
+	OpenURL string
+}
+
+func (e instanceRunningError) Error() string {
+	return "suna-app is already running"
+}
+
 var buildVersion = "dev"
 
 func main() {
 	cfg := config.Default()
+	noOpen := false
 	flag.StringVar(&cfg.ListenAddress, "listen", cfg.ListenAddress, "HTTP listen address (default 0.0.0.0:7633)")
-	flag.StringVar(&cfg.SunaBinary, "suna-binary", cfg.SunaBinary, "path to the installed suna executable")
+	flag.StringVar(&cfg.SunaBinary, "suna-binary", cfg.SunaBinary, "path to the suna executable (bundled runtime is preferred when unset)")
+	flag.BoolVar(&noOpen, "no-open", false, "do not open the system browser")
 	// 记录用户是否显式指定了 --listen：显式指定时不做端口回退，
 	// 尊重用户意图（与 Suna Runtime 的 --listen 语义一致）。
 	// 注意：flag.Visit 必须在 flag.Parse() 之后调用，否则看不到任何已设置 flag。
@@ -38,12 +49,25 @@ func main() {
 		}
 	})
 
+	exePath, err := os.Executable()
+	if err != nil || strings.TrimSpace(exePath) == "" {
+		exePath = os.Args[0]
+	}
+	cfg.SunaBinary = config.ResolveSunaBinary(cfg.SunaBinary, exePath)
+
 	// 监听地址自由指定：默认 0.0.0.0 覆盖本机 loopback、局域网与 Tailscale 虚拟网
 	// （手机远程场景）；显式 --listen 127.0.0.1 可退回纯本机模式。
 	// 显式 --listen 时不做端口回退，尊重用户意图。
 
 	listener, err := listenWithFallback(cfg.ListenAddress, !listenExplicit)
 	if err != nil {
+		var running instanceRunningError
+		if errors.As(err, &running) {
+			if !noOpen {
+				_ = desktop.OpenURL(running.OpenURL)
+			}
+			os.Exit(0)
+		}
 		fmt.Fprintf(os.Stderr, "suna-app could not start the local server: %v\n", err)
 		os.Exit(1)
 	}
@@ -70,7 +94,13 @@ func main() {
 	// 非 loopback 监听时启用远程模式：CSRF 校验从"仅 loopback 同源"放宽为"任意同源"。
 	// 默认 0.0.0.0 监听下总是远程模式；显式 --listen 127.0.0.1 则退回严格本机模式。
 	allowRemote := !isLoopbackAddress(cfg.ListenAddress)
-	handler := httpapi.NewServerWithBridge(connections, cfg.CommandTimeout+cfg.DialTimeout+cfg.HelloTimeout, browserBridge, allowRemote)
+	shutdownCh := make(chan struct{}, 1)
+	handler := httpapi.NewServerWithLifecycle(connections, cfg.CommandTimeout+cfg.DialTimeout+cfg.HelloTimeout, browserBridge, allowRemote, func() {
+		select {
+		case shutdownCh <- struct{}{}:
+		default:
+		}
+	})
 	mux := http.NewServeMux()
 	mux.Handle("/api/", handler)
 	mux.Handle("/healthz", handler)
@@ -84,21 +114,21 @@ func main() {
 		IdleTimeout:  30 * time.Second,
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	logger.Info("suna-app gateway started", "version", buildVersion, "address", actualAddress)
+	logger := desktop.NewLogger()
+	openURL := desktop.PublicOpenURL(actualAddress)
+	logger.Info("suna-app gateway started", "version", buildVersion, "address", actualAddress, "open_url", openURL, "suna_binary", cfg.SunaBinary, "log", desktop.LogPath())
+	if !noOpen {
+		if err := desktop.OpenURL(openURL); err != nil {
+			logger.Warn("could not open the system browser", "error", err, "url", openURL)
+		}
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.Serve(listener) }()
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	select {
-	case err := <-errCh:
-		if !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("suna-app gateway stopped", "error", err)
-			os.Exit(1)
-		}
-	case <-signals:
+	stopGateway := func() {
 		// 先撤销浏览器 bridge 并关闭其 Runtime socket，再停止 HTTP；避免进程退出时
 		// 仍遗留 attach 或通知泵影响本地 Runtime。
 		browserBridge.Close()
@@ -108,6 +138,18 @@ func main() {
 			logger.Error("suna-app gateway shutdown failed", "error", err)
 			os.Exit(1)
 		}
+	}
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("suna-app gateway stopped", "error", err)
+			os.Exit(1)
+		}
+	case <-shutdownCh:
+		logger.Info("suna-app shutdown requested from local UI")
+		stopGateway()
+	case <-signals:
+		stopGateway()
 	}
 }
 
@@ -130,7 +172,7 @@ func isLoopbackAddress(address string) bool {
 // 避免丢失局域网/Tailscale 可达性）。显式 --listen 时不回退。
 func listenWithFallback(address string, allowFallback bool) (net.Listener, error) {
 	listener, err := net.Listen("tcp", address)
-	if err == nil || !allowFallback || !errors.Is(err, syscall.EADDRINUSE) {
+	if err == nil || !allowFallback || !isAddrInUse(err) {
 		return listener, err
 	}
 	// 占用者很可能就是另一个 Suna App 实例：探测 /healthz 确认后直接复用，
@@ -145,8 +187,7 @@ func listenWithFallback(address string, allowFallback bool) (net.Listener, error
 		}
 	}
 	if isSunaAppRunning(probeURL) {
-		fmt.Fprintf(os.Stderr, "suna-app: 检测到已有 Suna App 正在运行，请直接打开 http://%s\n", address)
-		os.Exit(0)
+		return nil, instanceRunningError{OpenURL: desktop.PublicOpenURL(address)}
 	}
 	// 其他程序占用了默认端口：回退随机端口，实际地址由启动日志告知用户。
 	// 回退保持与请求地址相同的监听范围（loopback 或全网卡）。

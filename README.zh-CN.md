@@ -74,6 +74,29 @@ Suna App:     v0.x.y
 
 兼容性取决于公开 Runtime protocol 与 capabilities，而不是两个应用的版本号相同。每个 Suna App release 都会声明支持的 Runtime protocol 版本。
 
+## 桌面一体包（方案 A）
+
+把 Gateway 和预编译的 Runtime 打进同一份 zip / `.app`。用户解压或拖入 Applications 后双击 `suna-app`，浏览器会打开界面；在设置里填写模型和 API Key 即可使用。不需要先把 `suna` 加到 PATH。
+
+```powershell
+$env:SUNA_RUNTIME = "H:\path\to\suna.exe"
+.\scripts\build-desktop.ps1 -Version v0.1.0 -Goarch amd64
+```
+
+```bash
+SUNA_RUNTIME=/path/to/suna ./scripts/build-desktop.sh v0.1.0 darwin arm64
+```
+
+产物布局：
+
+```text
+Windows:  suna-app.exe + runtime/suna.exe
+macOS:    Suna.app/Contents/MacOS/suna-app
+          Suna.app/Contents/Resources/runtime/suna
+```
+
+关掉浏览器标签不会退出 Gateway。设置 → 连接 → 退出应用，或结束 `suna-app` 进程。日志在 `~/.suna-app/logs/app.log`。
+
 ## 许可证
 
 MIT。见 [LICENSE](LICENSE)。

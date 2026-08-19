@@ -471,6 +471,16 @@ const DICT: Dict = {
   "conn.language": { zh: "语言", en: "Language" },
   "conn.language.zh": { zh: "中文", en: "Chinese" },
   "conn.language.en": { zh: "英文", en: "English" },
+  "conn.quit": { zh: "退出应用", en: "Quit app" },
+  "conn.quitHint": {
+    zh: "关闭本机 Gateway。关掉浏览器标签不会停止后台进程。",
+    en: "Stops the local gateway. Closing the browser tab does not quit the app.",
+  },
+  "conn.quitConfirm": {
+    zh: "确定退出 Suna App？正在运行的任务将无法从界面继续查看。",
+    en: "Quit Suna App? Running tasks will no longer be visible from this UI.",
+  },
+  "conn.quitFailed": { zh: "退出失败，请从任务管理器结束进程。", en: "Quit failed. Stop the process from Task Manager." },
   // MCP Tab
   "mcp.title": { zh: "外部工具", en: "External tools" },
   "mcp.loading": { zh: "加载中", en: "Loading" },

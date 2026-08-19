@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -50,8 +51,14 @@ func TestListenWithFallback_ReusesExistingSunaApp(t *testing.T) {
 		t.Fatal("isSunaAppRunning = false, want true")
 	}
 
-	// listenWithFallback 会探测到已有实例并 os.Exit(0)，无法直接调用；
-	// 这里验证探测函数本身即可，回退分支由下一测试覆盖。
+	_, err := listenWithFallback(host, true)
+	var running instanceRunningError
+	if !errors.As(err, &running) {
+		t.Fatalf("listenWithFallback existing instance = %v, want instanceRunningError", err)
+	}
+	if !strings.HasPrefix(running.OpenURL, "http://127.0.0.1:") {
+		t.Fatalf("OpenURL = %q, want loopback http URL", running.OpenURL)
+	}
 }
 
 func TestListenWithFallback_OccupiedByOtherApp(t *testing.T) {
@@ -99,20 +106,25 @@ func TestListenWithFallback_DefaultWildcardKeepsWildcard(t *testing.T) {
 // /healthz 前会被映射为 127.0.0.1——否则 0.0.0.0 不可路由，探测永远失败，
 // 已有 Suna App 实例无法被复用（双实例回归）。
 func TestProbeURLRewritesUnspecifiedHost(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-	_, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+	listener := occupyAddress(t, "127.0.0.1:0")
+	defer listener.Close()
+	_, port, err := net.SplitHostPort(listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
 
 	// 模拟默认 0.0.0.0 监听：探测地址被重写为 127.0.0.1:<port> 后可达。
-	// probeURL 不含 /healthz（isSunaAppRunning 内部拼接），避免双重拼接
-	// 落到 SPA fallback 造成"任意 200 服务都被误判为 suna-app"。
 	probeURL := "http://0.0.0.0:" + port
-	if host, p, err := net.SplitHostPort(probeURL); err == nil {
+	if host, p, err := net.SplitHostPort(strings.TrimPrefix(probeURL, "http://")); err == nil {
 		if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
 			probeURL = "http://127.0.0.1:" + p
 		}
@@ -153,8 +165,8 @@ func TestListenWithFallback_ExplicitListenDoesNotFallback(t *testing.T) {
 	if err == nil {
 		t.Fatal("listenWithFallback with explicit listen = nil error, want EADDRINUSE")
 	}
-	if !strings.Contains(err.Error(), "address already in use") {
-		t.Fatalf("error = %v, want address already in use", err)
+	if !isAddrInUse(err) {
+		t.Fatalf("error = %v, want address-in-use", err)
 	}
 }
 

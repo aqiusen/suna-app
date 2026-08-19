@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { requestGatewayShutdown } from "../../lib/gatewayShutdown";
 import { useChangeLocale, useLocale, useT } from "../../lib/i18n";
 import type { Theme } from "../../lib/models";
 import type { SettingsTabProps } from "./RuntimeSettings";
@@ -43,6 +44,7 @@ export function ConnectionTab({
   const locale = useLocale();
   const changeLocale = useChangeLocale();
   const [status, setStatus] = useState<DaemonStatus>();
+  const [quitError, setQuitError] = useState<string>();
   useEffect(() => {
     let alive = true;
     rpc("daemon.status", {})
@@ -220,6 +222,31 @@ export function ConnectionTab({
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="rounded-xl border border-line bg-surface-raised/60 p-3.5">
+        <h3 className="m-0 mb-2 text-[13px] font-extrabold text-ink">
+          {t("conn.quit")}
+        </h3>
+        <p className="m-0 mb-3 text-[12px] leading-5 text-ink-muted">
+          {t("conn.quitHint")}
+        </p>
+        <button
+          className="cursor-pointer rounded-lg border border-line bg-surface-raised px-3 py-1.5 text-[12px] font-bold text-ink-soft transition-colors duration-150 hover:bg-surface-subtle"
+          onClick={() => {
+            if (!window.confirm(t("conn.quitConfirm"))) return;
+            setQuitError(undefined);
+            void requestGatewayShutdown().catch(() => {
+              setQuitError(t("conn.quitFailed"));
+            });
+          }}
+          type="button"
+        >
+          {t("conn.quit")}
+        </button>
+        {quitError ? (
+          <p className="mt-2 m-0 text-[12px] text-danger">{quitError}</p>
+        ) : null}
       </section>
     </div>
   );
