@@ -76,11 +76,13 @@ Suna App:     v0.x.y
 
 ## 桌面一体包（方案 A）
 
-把 Gateway 和预编译的 Runtime 打进同一份 zip / `.app`。用户解压或拖入 Applications 后双击 `suna-app`，浏览器会打开界面；在设置里填写模型和 API Key 即可使用。不需要先把 `suna` 加到 PATH。
+完整步骤、安装目录（`runtime` 装在哪）、排错见 [桌面一体包打包说明](docs/desktop-packaging.md)。
+
+把 Gateway 和预编译的 Runtime 打进同一个安装器。发给用户 `dist\SunaSetup-v0.1.0-windows-amd64.exe`，双击即可安装并打开独立窗口（不是普通浏览器标签）。
 
 ```powershell
 $env:SUNA_RUNTIME = "H:\path\to\suna.exe"
-.\scripts\build-desktop.ps1 -Version v0.1.0 -Goarch amd64
+.\scripts\build-desktop.ps1 -AppVersion v0.1.0 -Goarch amd64
 ```
 
 ```bash

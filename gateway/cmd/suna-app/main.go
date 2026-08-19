@@ -118,8 +118,15 @@ func main() {
 	openURL := desktop.PublicOpenURL(actualAddress)
 	logger.Info("suna-app gateway started", "version", buildVersion, "address", actualAddress, "open_url", openURL, "suna_binary", cfg.SunaBinary, "log", desktop.LogPath())
 	if !noOpen {
-		if err := desktop.OpenURL(openURL); err != nil {
-			logger.Warn("could not open the system browser", "error", err, "url", openURL)
+		// 关窗口后浏览器会断开 SSE/bridge；稍等避免刷新误杀，再停 Gateway 和 daemon。
+		browserBridge.SetEmptyIdle(2*time.Second, func() {
+			select {
+			case shutdownCh <- struct{}{}:
+			default:
+			}
+		})
+		if _, err := desktop.StartAppWindow(openURL); err != nil {
+			logger.Warn("could not open the app window", "error", err, "url", openURL)
 		}
 	}
 
@@ -137,6 +144,16 @@ func main() {
 		if err := server.Shutdown(ctx); err != nil {
 			logger.Error("suna-app gateway shutdown failed", "error", err)
 			os.Exit(1)
+		}
+		// 桌面关窗口必须停掉 Runtime daemon；只靠 idle_exit 时用户会看到残留 suna.exe。
+		if !noOpen {
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), 8*time.Second)
+			if err := runtime.StopDaemon(stopCtx, cfg.SunaBinary); err != nil {
+				logger.Warn("runtime daemon stop failed", "error", err)
+			} else {
+				logger.Info("runtime daemon stopped")
+			}
+			stopCancel()
 		}
 	}
 	select {

@@ -63,6 +63,9 @@ func commandJSONOutput(ctx context.Context, command *exec.Cmd) ([]byte, error) {
 		return nil, err
 	}
 	command.Stderr = os.Stderr
+	// GUI 子系统的 suna-app 没有控制台；不隐藏的话，Windows 会为
+	// 控制台版 suna.exe 弹出一个一直不关的黑窗口。
+	hideConsoleWindow(command)
 	if err := command.Start(); err != nil {
 		return nil, err
 	}

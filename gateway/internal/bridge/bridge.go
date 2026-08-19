@@ -103,6 +103,12 @@ type Service struct {
 
 	mu      sync.RWMutex
 	clients map[string]*client
+
+	// emptyIdle 在最后一个浏览器客户端离开后触发，供桌面端关掉窗口后退出。
+	emptyIdle  time.Duration
+	onEmpty    func()
+	hadClient  bool
+	emptyTimer *time.Timer
 }
 
 type client struct {
@@ -167,6 +173,49 @@ func New(connector Connector, config Config) (*Service, error) {
 // MaxRequestBody is the upper limit for one browser RPC JSON document.
 func (s *Service) MaxRequestBody() int64 { return s.maxBody }
 
+// SetEmptyIdle 在曾经连上过的最后一个浏览器客户端离开 duration 后调用 fn。
+// duration<=0 或 fn==nil 表示关闭该行为。
+func (s *Service) SetEmptyIdle(duration time.Duration, fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.emptyTimer != nil {
+		s.emptyTimer.Stop()
+		s.emptyTimer = nil
+	}
+	s.emptyIdle = duration
+	s.onEmpty = fn
+}
+
+func (s *Service) noteClientAdded() {
+	s.mu.Lock()
+	s.hadClient = true
+	if s.emptyTimer != nil {
+		s.emptyTimer.Stop()
+		s.emptyTimer = nil
+	}
+	s.mu.Unlock()
+}
+
+func (s *Service) noteClientRemoved() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.emptyIdle <= 0 || s.onEmpty == nil || !s.hadClient || len(s.clients) != 0 {
+		return
+	}
+	if s.emptyTimer != nil {
+		s.emptyTimer.Stop()
+	}
+	fn := s.onEmpty
+	s.emptyTimer = time.AfterFunc(s.emptyIdle, func() {
+		s.mu.Lock()
+		idle := s.hadClient && len(s.clients) == 0 && s.onEmpty != nil
+		s.mu.Unlock()
+		if idle {
+			fn()
+		}
+	})
+}
+
 // Connect creates an opaque browser ID after Runtime negotiation has completed.
 func (s *Service) Connect(ctx context.Context) (string, json.RawMessage, error) {
 	s.mu.RLock()
@@ -194,6 +243,7 @@ func (s *Service) Connect(ctx context.Context) (string, json.RawMessage, error) 
 	}
 	s.clients[id] = c
 	s.mu.Unlock()
+	s.noteClientAdded()
 	s.scheduleIdleDisconnect(id, c)
 	// 此 goroutine 是唯一的 Runtime 通知消费者；它退出时关闭所有 SSE 订阅者，避免重连客户端相互抢事件。
 	go s.pump(id, c)
@@ -303,6 +353,7 @@ func (s *Service) Disconnect(id string) error {
 	if !ok {
 		return ErrNotFound
 	}
+	s.noteClientRemoved()
 	c.closeSubscribers()
 	return c.connection.Close()
 }
@@ -337,6 +388,7 @@ func (s *Service) disconnectIfCurrent(id string, expected *client) {
 	}
 	delete(s.clients, id)
 	s.mu.Unlock()
+	s.noteClientRemoved()
 	c.closeSubscribers()
 	_ = c.connection.Close()
 }
@@ -400,6 +452,9 @@ func (s *Service) retire(id string, c *client) {
 		delete(s.clients, id)
 	}
 	s.mu.Unlock()
+	if active {
+		s.noteClientRemoved()
+	}
 	c.closeSubscribers()
 	if active && s.discovery != nil {
 		s.discovery.RefreshDiscovery()

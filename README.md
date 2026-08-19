@@ -76,11 +76,13 @@ Compatibility is determined by the public Runtime protocol and advertised capabi
 
 ## Desktop bundle
 
-Ship the Gateway and a prebuilt Runtime in one zip / `.app`. After install the user double-clicks, the system browser opens, and API keys are entered in Settings. `suna` does not need to be on `PATH`.
+Step-by-step packaging (Windows / macOS, directories, troubleshooting): [docs/desktop-packaging.md](docs/desktop-packaging.md).
+
+Ship the Gateway and a prebuilt Runtime in one installer (`SunaSetup-*.exe`). Double-click installs under `%LOCALAPPDATA%\Programs\Suna` and opens an Edge/Chrome `--app` window. API keys are entered in Settings. `suna` does not need to be on `PATH`.
 
 ```powershell
 $env:SUNA_RUNTIME = "C:\path\to\suna.exe"
-.\scripts\build-desktop.ps1 -Version v0.1.0 -Goarch amd64
+.\scripts\build-desktop.ps1 -AppVersion v0.1.0 -Goarch amd64
 ```
 
 ```bash
