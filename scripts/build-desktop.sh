@@ -30,19 +30,27 @@ if [ "$GOOS" = "windows" ]; then
   LDFLAGS="$LDFLAGS -H=windowsgui"
 fi
 
-if [ ! -d "$ROOT_DIR/frontend/node_modules" ]; then
-  printf '%s\n' "frontend dependencies missing: run 'cd frontend && pnpm install' first" >&2
-  exit 1
+STAGED_INDEX="$ROOT_DIR/gateway/internal/webassets/dist/index.html"
+if [ "${SKIP_FRONTEND_BUILD:-}" = "1" ]; then
+  if [ ! -f "$STAGED_INDEX" ]; then
+    printf '%s\n' "SKIP_FRONTEND_BUILD=1 but staged frontend is missing: $STAGED_INDEX" >&2
+    exit 1
+  fi
+else
+  if [ ! -d "$ROOT_DIR/frontend/node_modules" ]; then
+    printf '%s\n' "frontend dependencies missing: run 'cd frontend && pnpm install' first" >&2
+    exit 1
+  fi
+  (
+    cd "$ROOT_DIR/frontend"
+    pnpm build
+  )
+  "$ROOT_DIR/scripts/stage-frontend.sh"
+  (
+    cd "$GATEWAY_DIR"
+    go test -tags=integration ./internal/webassets
+  )
 fi
-(
-  cd "$ROOT_DIR/frontend"
-  pnpm build
-)
-"$ROOT_DIR/scripts/stage-frontend.sh"
-(
-  cd "$GATEWAY_DIR"
-  go test -tags=integration ./internal/webassets
-)
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
@@ -72,13 +80,19 @@ if [ "$GOOS" = "darwin" ]; then
       zip -9 -r "$ARCHIVE" "Suna.app"
     else
       python3 - "$ARCHIVE" <<'PY'
-import sys, zipfile, os
+import os, stat, sys, zipfile
 archive = sys.argv[1]
 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
     for root, _, files in os.walk("Suna.app"):
         for name in files:
             path = os.path.join(root, name)
-            zf.write(path, path)
+            info = zipfile.ZipInfo.from_file(path, path.replace(os.sep, "/"))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            mode = os.stat(path).st_mode
+            if mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+                info.external_attr = (mode | 0o111) << 16
+            with open(path, "rb") as fh:
+                zf.writestr(info, fh.read())
 PY
     fi
   )

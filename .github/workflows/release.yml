@@ -61,9 +61,26 @@ jobs:
       - name: Build release artifacts
         run: ./scripts/build-release.sh "${GITHUB_REF_NAME}"
 
+      # 桌面一体包：从 Runtime 的公开 GitHub Release 取 darwin 二进制，不编译 suna 源码。
+      # 钉死版本，避免 App 与 Runtime 漂到不兼容的 protocol。
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Build darwin desktop sidecar zips
+        env:
+          SUNA_RUNTIME_REPO: alanchenchen/suna
+          SUNA_RUNTIME_TAG: v0.19.3
+        run: |
+          set -euo pipefail
+          for arch in arm64 amd64; do
+            dest="${RUNNER_TEMP}/suna-runtime/darwin-${arch}/suna"
+            bash ./scripts/fetch-suna-runtime.sh "${SUNA_RUNTIME_TAG}" darwin "${arch}" "$dest"
+            SKIP_FRONTEND_BUILD=1 SUNA_RUNTIME="$dest" bash ./scripts/build-desktop.sh "${GITHUB_REF_NAME}" darwin "${arch}"
+          done
+
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum suna-app-* > checksums.txt
+        run: sha256sum v* > checksums.txt
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

@@ -138,7 +138,25 @@ C:\Users\<用户名>\AppData\Local\Programs\Suna\
 
 ## macOS 打包
 
-在 Mac 上（或能交叉编译 darwin 的环境）执行。Runtime 必须是 **对应架构的 macOS 二进制**，不要把 Windows 的 `suna.exe` 打进 `.app`。
+推荐在 GitHub Actions 上打（ubuntu 交叉编译，与 Runtime 仓库同一套路）。Runtime 必须是 **对应架构的 macOS 二进制**，不要把 Windows 的 `suna.exe` 打进 `.app`。
+
+### GitHub Actions（推荐）
+
+1. 把 `feat/desktop-sidecar-bundle` 推到 GitHub（该分支的 push 会自动跑）。合进默认分支后，也可以用 **Actions → Desktop macOS → Run workflow**。
+2. 手动跑时填写：
+   - `app_version`：写入二进制和 zip 名，例如 `v0.1.0`
+   - `runtime_tag`：捆绑的 Suna Runtime Release tag，例如 `v0.19.3`（必须已有 `suna-darwin-arm64.zip` / `suna-darwin-amd64.zip`）
+3. 跑完后在该 run 的 **Artifacts** 下载：
+   - `v0.1.0-suna-desktop-darwin-arm64.zip`（Apple Silicon）
+   - `v0.1.0-suna-desktop-darwin-amd64.zip`（Intel Mac）
+
+workflow 会从 `alanchenchen/suna` 的公开 Release 下载 Runtime，再调用 `scripts/build-desktop.sh` 组装 `Suna.app`。本仓库不 checkout、不编译 Runtime 源码。
+
+推送 `v*` tag 时，正式 `release.yml` 也会附带这两份 darwin 桌面 zip。Runtime tag 钉在 workflow 里的 `SUNA_RUNTIME_TAG`，改捆绑版本时改那一处。
+
+未签名：用户可能看到「已损坏」。内部分发可让对方执行 `xattr -cr /Applications/Suna.app`。对外公开发需要 Apple 证书做公证，当前未做。
+
+### 本地交叉编译
 
 ```bash
 cd /path/to/suna
@@ -146,6 +164,13 @@ GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o suna .
 
 cd /path/to/suna-app
 SUNA_RUNTIME=/path/to/suna/suna ./scripts/build-desktop.sh v0.1.0 darwin arm64
+```
+
+也可以不编 Runtime，改下公开 Release：
+
+```bash
+./scripts/fetch-suna-runtime.sh v0.19.3 darwin arm64 /tmp/suna
+SUNA_RUNTIME=/tmp/suna ./scripts/build-desktop.sh v0.1.0 darwin arm64
 ```
 
 Intel Mac 把 `arm64` 换成 `amd64`。

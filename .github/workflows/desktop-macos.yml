@@ -1,0 +1,91 @@
+name: Desktop macOS
+
+# 打 macOS 桌面一体包（Suna.app + 捆绑 Runtime）。
+# 不创建 GitHub Release；产物在 Actions Artifacts 里下载。
+# workflow_dispatch 要等这个文件进默认分支后才出现在 UI；当前 feature 分支用 push 触发。
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: Version written into suna-app and the zip name
+        required: true
+        default: v0.1.0
+      runtime_tag:
+        description: Suna Runtime GitHub release tag to bundle
+        required: true
+        default: v0.19.3
+  push:
+    branches:
+      - feat/desktop-sidecar-bundle
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: Build darwin desktop zips
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION: ${{ inputs.app_version || 'v0.1.0' }}
+      RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.19.3' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: gateway/go.mod
+          check-latest: true
+          cache: false
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build darwin-arm64 desktop zip
+        env:
+          SUNA_RUNTIME_REPO: alanchenchen/suna
+        run: |
+          set -euo pipefail
+          dest="${RUNNER_TEMP}/suna-runtime/darwin-arm64/suna"
+          bash ./scripts/fetch-suna-runtime.sh "${RUNTIME_TAG}" darwin arm64 "$dest"
+          SUNA_RUNTIME="$dest" bash ./scripts/build-desktop.sh "${APP_VERSION}" darwin arm64
+
+      - name: Build darwin-amd64 desktop zip
+        env:
+          SUNA_RUNTIME_REPO: alanchenchen/suna
+          SKIP_FRONTEND_BUILD: "1"
+        run: |
+          set -euo pipefail
+          dest="${RUNNER_TEMP}/suna-runtime/darwin-amd64/suna"
+          bash ./scripts/fetch-suna-runtime.sh "${RUNTIME_TAG}" darwin amd64 "$dest"
+          SUNA_RUNTIME="$dest" bash ./scripts/build-desktop.sh "${APP_VERSION}" darwin amd64
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum v*-suna-desktop-darwin-*.zip > desktop-macos-checksums.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_VERSION }}-suna-desktop-darwin
+          path: |
+            dist/v*-suna-desktop-darwin-*.zip
+            dist/desktop-macos-checksums.txt
+          if-no-files-found: error
