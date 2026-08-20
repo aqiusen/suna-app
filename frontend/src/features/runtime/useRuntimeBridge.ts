@@ -13,11 +13,7 @@ import {
 } from "../../lib/runtimeBridge";
 
 export type RuntimeBridgeStatus =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "disconnecting"
-  | "error";
+  "disconnected" | "connecting" | "connected" | "disconnecting" | "error";
 
 export type UseRuntimeBridgeOptions = Pick<
   RuntimeBridgeClientOptions,
