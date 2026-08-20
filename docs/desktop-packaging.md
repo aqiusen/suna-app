@@ -145,7 +145,7 @@ C:\Users\<用户名>\AppData\Local\Programs\Suna\
 1. 把 `feat/desktop-sidecar-bundle` 推到 GitHub（该分支的 push 会自动跑）。合进默认分支后，也可以用 **Actions → Desktop macOS → Run workflow**。
 2. 手动跑时填写：
    - `app_version`：写入二进制和 zip 名，例如 `v0.1.0`
-   - `runtime_tag`：捆绑的 Suna Runtime Release tag，例如 `v0.19.3`（必须已有 `suna-darwin-arm64.zip` / `suna-darwin-amd64.zip`）
+   - `runtime_tag`：捆绑的 Suna Runtime Release tag，例如 `v0.20.1`（必须已有 `suna-darwin-arm64.zip` / `suna-darwin-amd64.zip`）
 3. 跑完后在该 run 的 **Artifacts** 下载：
    - `v0.1.0-suna-desktop-darwin-arm64.zip`（Apple Silicon）
    - `v0.1.0-suna-desktop-darwin-amd64.zip`（Intel Mac）
@@ -169,7 +169,7 @@ SUNA_RUNTIME=/path/to/suna/suna ./scripts/build-desktop.sh v0.1.0 darwin arm64
 也可以不编 Runtime，改下公开 Release：
 
 ```bash
-./scripts/fetch-suna-runtime.sh v0.19.3 darwin arm64 /tmp/suna
+./scripts/fetch-suna-runtime.sh v0.20.1 darwin arm64 /tmp/suna
 SUNA_RUNTIME=/tmp/suna ./scripts/build-desktop.sh v0.1.0 darwin arm64
 ```
 
