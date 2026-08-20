@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # 从 Suna Runtime 的 GitHub Release 下载预编译二进制。本仓库不编译 Runtime 源码。
 # 用法:
-#   ./scripts/fetch-suna-runtime.sh v0.20.1 darwin arm64 /tmp/suna-runtime/suna
+#   ./scripts/fetch-suna-runtime.sh v0.19.3 darwin arm64 /tmp/suna-runtime/suna
 set -euo pipefail
 
-TAG="${1:?runtime tag is required, e.g. v0.20.1}"
+TAG="${1:?runtime tag is required, e.g. v0.19.3}"
 GOOS="${2:?goos is required: windows|darwin|linux}"
 GOARCH="${3:?goarch is required: amd64|arm64}"
 DEST="${4:?destination file path is required}"
