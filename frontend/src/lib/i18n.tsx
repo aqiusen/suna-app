@@ -480,7 +480,10 @@ const DICT: Dict = {
     zh: "确定退出 Suna App？正在运行的任务将无法从界面继续查看。",
     en: "Quit Suna App? Running tasks will no longer be visible from this UI.",
   },
-  "conn.quitFailed": { zh: "退出失败，请从任务管理器结束进程。", en: "Quit failed. Stop the process from Task Manager." },
+  "conn.quitFailed": {
+    zh: "退出失败，请从任务管理器结束进程。",
+    en: "Quit failed. Stop the process from Task Manager.",
+  },
   // MCP Tab
   "mcp.title": { zh: "外部工具", en: "External tools" },
   "mcp.loading": { zh: "加载中", en: "Loading" },

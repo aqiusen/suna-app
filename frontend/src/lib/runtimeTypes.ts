@@ -5,7 +5,9 @@
 
 export type JSONPrimitive = string | number | boolean | null;
 export type JSONValue =
-  JSONPrimitive | JSONValue[] | { [key: string]: JSONValue };
+  | JSONPrimitive
+  | JSONValue[]
+  | { [key: string]: JSONValue };
 export type JSONRecord = Record<string, JSONValue>;
 
 export type RuntimeHello = {
@@ -28,7 +30,8 @@ export type AttachmentRef = {
 };
 
 export type MessagePart =
-  { type: "text"; text: string } | { type: "image"; source: AttachmentRef };
+  | { type: "text"; text: string }
+  | { type: "image"; source: AttachmentRef };
 
 export type SessionStatus = "idle" | "running" | "waiting" | "compacting";
 export type SessionInfo = {
@@ -94,7 +97,12 @@ export type AgentRunEvent = {
   run_id?: string;
   /** cancelling 是非终态：daemon 已接受取消，run 仍在收尾，can_control=false。 */
   state:
-    "running" | "retrying" | "cancelling" | "done" | "failed" | "cancelled";
+    | "running"
+    | "retrying"
+    | "cancelling"
+    | "done"
+    | "failed"
+    | "cancelled";
   phase?: "model" | "tool" | "compact" | "guard" | "ask" | "skill";
   can_control: boolean;
   message?: string;
