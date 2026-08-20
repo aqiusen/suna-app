@@ -189,7 +189,9 @@ Suna.app/Contents/Resources/runtime/suna
 Suna.app/Contents/Info.plist
 ```
 
-用户把 `Suna.app` 拖进「应用程序」再打开。未签名时 macOS 可能提示「已损坏」，需要本地签名/公证后才能给外人顺畅安装。
+用户把 `Suna.app` 拖进「应用程序」再打开。zip 里还有 `Install Suna.command`：在 Mac 上解压后双击它（第一次可能要右键 → 打开），会去掉隔离标记、补执行权限并拷进「应用程序」。
+
+未公证时 macOS 仍可能对从浏览器直接打开的 `.app` 报「已损坏」。正确做法是 **把 zip 拷到 Mac 再解压**，不要在 Windows 解压后传文件夹。对外公开发需要 Apple 证书做公证。
 
 ---
 

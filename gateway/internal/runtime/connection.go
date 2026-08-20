@@ -39,7 +39,7 @@ func (l CommandLauncher) Launch(ctx context.Context) (ServeResult, error) {
 	command.Env = withoutDaemonMode(os.Environ())
 	output, err := commandJSONOutput(ctx, command)
 	if err != nil {
-		return ServeResult{}, &Error{Kind: ErrorUnavailable, Err: fmt.Errorf("runtime is unavailable")}
+		return ServeResult{}, &Error{Kind: ErrorUnavailable, Err: fmt.Errorf("runtime is unavailable: %w", err)}
 	}
 	return parseServeResult(output)
 }

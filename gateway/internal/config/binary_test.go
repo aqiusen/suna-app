@@ -92,6 +92,25 @@ func TestResolveSunaBinaryFallsBackToName(t *testing.T) {
 	}
 }
 
+func TestEnsureExecutableSetsUnixExecuteBits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, BundledRuntimeName())
+	if err := os.WriteFile(path, []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	EnsureExecutable(path)
+	if runtime.GOOS == "windows" {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatalf("EnsureExecutable() left mode %v without execute bits", info.Mode())
+	}
+}
+
 func TestBundledRuntimeName(t *testing.T) {
 	name := BundledRuntimeName()
 	if runtime.GOOS == "windows" {

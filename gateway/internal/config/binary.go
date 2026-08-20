@@ -59,3 +59,18 @@ func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }
+
+// EnsureExecutable 给已解析到的捆绑 Runtime 补上执行位。
+// Windows 解压再拷到 Mac 时 zip 的 Unix +x 经常丢失，exec 会变成
+// "Runtime is unavailable"，尽管文件还在 Contents/Resources/runtime/suna。
+func EnsureExecutable(path string) {
+	path = strings.TrimSpace(path)
+	if path == "" || !filepath.IsAbs(path) {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return
+	}
+	_ = os.Chmod(path, info.Mode()|0o111)
+}

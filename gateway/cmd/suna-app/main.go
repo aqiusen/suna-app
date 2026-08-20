@@ -54,6 +54,8 @@ func main() {
 		exePath = os.Args[0]
 	}
 	cfg.SunaBinary = config.ResolveSunaBinary(cfg.SunaBinary, exePath)
+	config.EnsureExecutable(cfg.SunaBinary)
+	desktop.ClearQuarantine(cfg.SunaBinary)
 
 	// 监听地址自由指定：默认 0.0.0.0 覆盖本机 loopback、局域网与 Tailscale 虚拟网
 	// （手机远程场景）；显式 --listen 127.0.0.1 可退回纯本机模式。

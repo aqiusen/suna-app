@@ -72,12 +72,15 @@ if [ "$GOOS" = "darwin" ]; then
   cp "$ROOT_DIR/packaging/macos/Info.plist" "$APP_ROOT/Contents/Info.plist"
   cp "$RUNTIME_SRC" "$APP_ROOT/Contents/Resources/runtime/suna"
   chmod +x "$APP_ROOT/Contents/MacOS/suna-app" "$APP_ROOT/Contents/Resources/runtime/suna"
+  INSTALLER="$DIST_DIR/Install Suna.command"
+  cp "$ROOT_DIR/packaging/macos/Install Suna.command" "$INSTALLER"
+  chmod +x "$INSTALLER"
   ARCHIVE="$ROOT_DIR/dist/${VERSION}-suna-desktop-${GOOS}-${GOARCH}.zip"
   rm -f "$ARCHIVE"
   (
     cd "$DIST_DIR"
     if command -v zip >/dev/null 2>&1; then
-      zip -9 -r "$ARCHIVE" "Suna.app"
+      zip -9 -r "$ARCHIVE" "Suna.app" "Install Suna.command"
     else
       python3 - "$ARCHIVE" <<'PY'
 import os, stat, sys, zipfile
@@ -93,6 +96,13 @@ with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
                 info.external_attr = (mode | 0o111) << 16
             with open(path, "rb") as fh:
                 zf.writestr(info, fh.read())
+    installer = "Install Suna.command"
+    if os.path.isfile(installer):
+        info = zipfile.ZipInfo.from_file(installer, installer)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = (os.stat(installer).st_mode | 0o111) << 16
+        with open(installer, "rb") as fh:
+            zf.writestr(info, fh.read())
 PY
     fi
   )
