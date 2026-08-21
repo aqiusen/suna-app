@@ -69,7 +69,7 @@ jobs:
       - name: Build darwin desktop sidecar zips
         env:
           SUNA_RUNTIME_REPO: alanchenchen/suna
-          SUNA_RUNTIME_TAG: v0.19.3
+          SUNA_RUNTIME_TAG: v0.21.0
         run: |
           set -euo pipefail
           for arch in arm64 amd64; do
