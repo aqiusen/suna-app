@@ -75,37 +75,19 @@ if [ "$GOOS" = "darwin" ]; then
   INSTALLER="$DIST_DIR/Install Suna.command"
   cp "$ROOT_DIR/packaging/macos/Install Suna.command" "$INSTALLER"
   chmod +x "$INSTALLER"
-  ARCHIVE="$ROOT_DIR/dist/${VERSION}-suna-desktop-${GOOS}-${GOARCH}.zip"
+  # 用 hdiutil 生成标准 dmg（拖拽安装），替代 zip。
+  # 注意：hdiutil 仅存在于 macOS，故 CI 必须在 macos runner 上执行 darwin 打包。
+  STAGING="$DIST_DIR/dmg-staging"
+  rm -rf "$STAGING"
+  mkdir -p "$STAGING"
+  cp -R "$APP_ROOT" "$STAGING/Suna.app"
+  cp "$INSTALLER" "$STAGING/Install Suna.command"
+  # 提供指向 /Applications 的软链，用户拖拽 Suna.app 到 Applications 即完成安装。
+  ln -s /Applications "$STAGING/Applications"
+  ARCHIVE="$ROOT_DIR/dist/${VERSION}-suna-desktop-${GOOS}-${GOARCH}.dmg"
   rm -f "$ARCHIVE"
-  (
-    cd "$DIST_DIR"
-    if command -v zip >/dev/null 2>&1; then
-      zip -9 -r "$ARCHIVE" "Suna.app" "Install Suna.command"
-    else
-      python3 - "$ARCHIVE" <<'PY'
-import os, stat, sys, zipfile
-archive = sys.argv[1]
-with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
-    for root, _, files in os.walk("Suna.app"):
-        for name in files:
-            path = os.path.join(root, name)
-            info = zipfile.ZipInfo.from_file(path, path.replace(os.sep, "/"))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            mode = os.stat(path).st_mode
-            if mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
-                info.external_attr = (mode | 0o111) << 16
-            with open(path, "rb") as fh:
-                zf.writestr(info, fh.read())
-    installer = "Install Suna.command"
-    if os.path.isfile(installer):
-        info = zipfile.ZipInfo.from_file(installer, installer)
-        info.compress_type = zipfile.ZIP_DEFLATED
-        info.external_attr = (os.stat(installer).st_mode | 0o111) << 16
-        with open(installer, "rb") as fh:
-            zf.writestr(info, fh.read())
-PY
-    fi
-  )
+  hdiutil create -volname "Suna" -srcfolder "$STAGING" -ov -format UDZO "$ARCHIVE"
+  rm -rf "$STAGING"
 else
   mkdir -p "$DIST_DIR/runtime"
   if [ "$GOOS" = "windows" ]; then

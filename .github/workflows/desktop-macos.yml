@@ -23,8 +23,8 @@ permissions:
 
 jobs:
   macos:
-    name: Build darwin desktop zips
-    runs-on: ubuntu-latest
+    name: Build darwin desktop dmg
+    runs-on: macos-latest
     env:
       APP_VERSION: ${{ inputs.app_version || 'v0.1.0' }}
       RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.21.0' }}
@@ -58,7 +58,7 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      - name: Build darwin-arm64 desktop zip
+      - name: Build darwin-arm64 desktop dmg
         env:
           SUNA_RUNTIME_REPO: alanchenchen/suna
         run: |
@@ -67,10 +67,7 @@ jobs:
           bash ./scripts/fetch-suna-runtime.sh "${RUNTIME_TAG}" darwin arm64 "$dest"
           SUNA_RUNTIME="$dest" bash ./scripts/build-desktop.sh "${APP_VERSION}" darwin arm64
 
-      - name: Build darwin-amd64 desktop zip
-        env:
-          SUNA_RUNTIME_REPO: alanchenchen/suna
-          SKIP_FRONTEND_BUILD: "1"
+      - name: Build darwin-amd64 desktop dmg
         run: |
           set -euo pipefail
           dest="${RUNNER_TEMP}/suna-runtime/darwin-amd64/suna"
@@ -79,13 +76,13 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum v*-suna-desktop-darwin-*.zip > desktop-macos-checksums.txt
+        run: shasum -a 256 v*-suna-desktop-darwin-*.dmg > desktop-macos-checksums.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_VERSION }}-suna-desktop-darwin
           path: |
-            dist/v*-suna-desktop-darwin-*.zip
+            dist/v*-suna-desktop-darwin-*.dmg
             dist/desktop-macos-checksums.txt
           if-no-files-found: error

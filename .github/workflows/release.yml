@@ -11,7 +11,7 @@ permissions:
 jobs:
   release:
     name: Build and release
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,10 +63,8 @@ jobs:
 
       # 桌面一体包：从 Runtime 的公开 GitHub Release 取 darwin 二进制，不编译 suna 源码。
       # 钉死版本，避免 App 与 Runtime 漂到不兼容的 protocol。
-      - name: Install zip
-        run: sudo apt-get update && sudo apt-get install -y zip
-
-      - name: Build darwin desktop sidecar zips
+      # macOS runner 自带 hdiutil/zip，用于把 Suna.app 打成 dmg。
+      - name: Build darwin desktop sidecar dmg
         env:
           SUNA_RUNTIME_REPO: alanchenchen/suna
           SUNA_RUNTIME_TAG: v0.21.0

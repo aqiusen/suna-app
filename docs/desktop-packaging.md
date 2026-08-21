@@ -138,21 +138,21 @@ C:\Users\<用户名>\AppData\Local\Programs\Suna\
 
 ## macOS 打包
 
-推荐在 GitHub Actions 上打（ubuntu 交叉编译，与 Runtime 仓库同一套路）。Runtime 必须是 **对应架构的 macOS 二进制**，不要把 Windows 的 `suna.exe` 打进 `.app`。
+推荐在 GitHub Actions 上打（macOS runner 原生 hdiutil，与 Runtime 仓库同一套路）。Runtime 必须是 **对应架构的 macOS 二进制**，不要把 Windows 的 `suna.exe` 打进 `.app`。
 
 ### GitHub Actions（推荐）
 
 1. 把 `feat/desktop-sidecar-bundle` 推到 GitHub（该分支的 push 会自动跑）。合进默认分支后，也可以用 **Actions → Desktop macOS → Run workflow**。
 2. 手动跑时填写：
-   - `app_version`：写入二进制和 zip 名，例如 `v0.1.0`
+   - `app_version`：写入二进制和 dmg 名，例如 `v0.1.0`
    - `runtime_tag`：捆绑的 Suna Runtime Release tag，例如 `v0.21.0`（必须已有 `suna-darwin-arm64.zip` / `suna-darwin-amd64.zip`）
 3. 跑完后在该 run 的 **Artifacts** 下载：
-   - `v0.1.0-suna-desktop-darwin-arm64.zip`（Apple Silicon）
-   - `v0.1.0-suna-desktop-darwin-amd64.zip`（Intel Mac）
+   - `v0.1.0-suna-desktop-darwin-arm64.dmg`（Apple Silicon）
+   - `v0.1.0-suna-desktop-darwin-amd64.dmg`（Intel Mac）
 
-workflow 会从 `alanchenchen/suna` 的公开 Release 下载 Runtime，再调用 `scripts/build-desktop.sh` 组装 `Suna.app`。本仓库不 checkout、不编译 Runtime 源码。
+workflow 会从 `alanchenchen/suna` 的公开 Release 下载 Runtime，再调用 `scripts/build-desktop.sh` 组装 `Suna.app` 并用 `hdiutil` 打成 dmg。本仓库不 checkout、不编译 Runtime 源码。
 
-推送 `v*` tag 时，正式 `release.yml` 也会附带这两份 darwin 桌面 zip。Runtime tag 钉在 workflow 里的 `SUNA_RUNTIME_TAG`，改捆绑版本时改那一处。
+推送 `v*` tag 时，正式 `release.yml` 也会附带这两份 darwin 桌面 dmg。Runtime tag 钉在 workflow 里的 `SUNA_RUNTIME_TAG`，改捆绑版本时改那一处。
 
 未签名：用户可能看到「已损坏」。内部分发可让对方执行 `xattr -cr /Applications/Suna.app`。对外公开发需要 Apple 证书做公证，当前未做。
 
@@ -178,10 +178,10 @@ Intel Mac 把 `arm64` 换成 `amd64`。
 产物：
 
 ```text
-suna-app/dist/v0.1.0-suna-desktop-darwin-arm64.zip
+suna-app/dist/v0.1.0-suna-desktop-darwin-arm64.dmg
 ```
 
-里面是 `Suna.app`：
+dmg 挂载后是 `Suna.app`：
 
 ```text
 Suna.app/Contents/MacOS/suna-app
@@ -189,9 +189,9 @@ Suna.app/Contents/Resources/runtime/suna
 Suna.app/Contents/Info.plist
 ```
 
-用户把 `Suna.app` 拖进「应用程序」再打开。zip 里还有 `Install Suna.command`：在 Mac 上解压后双击它（第一次可能要右键 → 打开），会去掉隔离标记、补执行权限并拷进「应用程序」。
+dmg 里还有 `Install Suna.command`：在 Mac 上双击它（第一次可能要右键 → 打开），会去掉隔离标记、补执行权限并拷进「应用程序」。也可以直接把 `Suna.app` 拖进「应用程序」再打开。
 
-未公证时 macOS 仍可能对从浏览器直接打开的 `.app` 报「已损坏」。正确做法是 **把 zip 拷到 Mac 再解压**，不要在 Windows 解压后传文件夹。对外公开发需要 Apple 证书做公证。
+未公证时 macOS 仍可能对从浏览器直接打开的 `.app` 报「已损坏」。正确做法是 **把 dmg 拷到 Mac 再挂载**，不要在 Windows 解压后传文件夹。对外公开发需要 Apple 证书做公证。
 
 ---
 
