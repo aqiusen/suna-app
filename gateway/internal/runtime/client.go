@@ -204,7 +204,7 @@ func performHello(ctx context.Context, conn net.Conn) (HelloResult, error) {
 	}
 
 	var hello struct {
-		RuntimeVersion string         `json:"runtime_version"`
+		RuntimeVersion string          `json:"runtime_version"`
 		Catalog        protocolCatalog `json:"catalog"`
 	}
 	if err := json.Unmarshal(response.Result, &hello); err != nil {

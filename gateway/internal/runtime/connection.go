@@ -269,7 +269,7 @@ func (m *ConnectionManager) Probe(ctx context.Context) (HelloResult, error) {
 	}
 	defer connection.Close()
 	var hello struct {
-		RuntimeVersion string         `json:"runtime_version"`
+		RuntimeVersion string          `json:"runtime_version"`
 		Catalog        protocolCatalog `json:"catalog"`
 	}
 	if err := json.Unmarshal(connection.Hello(), &hello); err != nil {

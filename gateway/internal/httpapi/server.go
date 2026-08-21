@@ -123,7 +123,7 @@ func (s *Server) runtimeStatus(w http.ResponseWriter, r *http.Request) {
 	hello, err := s.probe(r.Context())
 	if err == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "ready",
+			"status": "ready",
 			"runtime": map[string]any{
 				"runtime_version": hello.RuntimeVersion,
 				"catalog": map[string]any{

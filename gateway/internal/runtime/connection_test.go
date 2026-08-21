@@ -28,7 +28,7 @@ func testCatalogHello() map[string]any {
 		"id":      1,
 		"result": map[string]any{
 			"runtime_version": "test",
-			"transport":      "tcp",
+			"transport":       "tcp",
 			"catalog": map[string]any{
 				"methods":       requiredCatalogMethods,
 				"notifications": []string{},
