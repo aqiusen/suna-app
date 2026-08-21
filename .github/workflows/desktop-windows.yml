@@ -9,24 +9,24 @@ on:
       app_version:
         description: Version written into suna-app and the setup name
         required: true
-        default: v0.1.0
+        default: v0.21.0
       runtime_tag:
         description: Suna Runtime GitHub release tag to bundle
         required: true
         default: v0.21.0
   push:
-    branches:
-      - feat/desktop-sidecar-bundle
+    tags:
+      - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows:
     name: Build bundled Windows setup
     runs-on: windows-latest
     env:
-      APP_VERSION: ${{ inputs.app_version || 'v0.1.0' }}
+      APP_VERSION: ${{ inputs.app_version || github.ref_name }}
       RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.21.0' }}
       SUNA_RUNTIME_REPO: alanchenchen/suna
     steps:
@@ -95,3 +95,12 @@ jobs:
             dist/*-suna-desktop-windows-amd64.zip
             dist/desktop-windows-checksums.txt
           if-no-files-found: error
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/SunaSetup-*-windows-amd64.exe
+            dist/*-suna-desktop-windows-amd64.zip
+            dist/desktop-windows-checksums.txt
