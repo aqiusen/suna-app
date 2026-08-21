@@ -1,0 +1,97 @@
+name: Desktop Windows
+
+# Builds the one-click Windows installer with bundled Runtime v0.21.0.
+# End users do not need to install or download Runtime separately.
+# workflow_dispatch appears in the UI after this file reaches the default branch.
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: Version written into suna-app and the setup name
+        required: true
+        default: v0.1.0
+      runtime_tag:
+        description: Suna Runtime GitHub release tag to bundle
+        required: true
+        default: v0.21.0
+  push:
+    branches:
+      - feat/desktop-sidecar-bundle
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Build bundled Windows setup
+    runs-on: windows-latest
+    env:
+      APP_VERSION: ${{ inputs.app_version || 'v0.1.0' }}
+      RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.21.0' }}
+      SUNA_RUNTIME_REPO: alanchenchen/suna
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: gateway/go.mod
+          check-latest: true
+          cache: false
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Download Windows runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $runtimeDir = Join-Path $env:RUNNER_TEMP "suna-runtime-windows-amd64"
+          $zipPath = Join-Path $env:RUNNER_TEMP "suna-runtime-windows-amd64.zip"
+          $url = "https://github.com/$env:SUNA_RUNTIME_REPO/releases/download/$env:RUNTIME_TAG/suna-windows-amd64.zip"
+
+          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $runtimeDir -Force
+
+          $runtime = Join-Path $runtimeDir "suna.exe"
+          if (-not (Test-Path -LiteralPath $runtime)) {
+            throw "Runtime zip missing suna.exe: $url"
+          }
+          "SUNA_RUNTIME=$runtime" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Bundling Runtime: $runtime"
+
+      - name: Build Windows setup
+        shell: pwsh
+        run: .\scripts\build-desktop.ps1 -AppVersion $env:APP_VERSION -Goarch amd64
+
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          Get-FileHash "dist\SunaSetup-*-windows-amd64.exe", "dist\*-suna-desktop-windows-amd64.zip" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $($_.Path)" } |
+            Set-Content -Path "dist\desktop-windows-checksums.txt"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_VERSION }}-suna-desktop-windows-amd64-bundled-runtime
+          path: |
+            dist/SunaSetup-*-windows-amd64.exe
+            dist/*-suna-desktop-windows-amd64.zip
+            dist/desktop-windows-checksums.txt
+          if-no-files-found: error
