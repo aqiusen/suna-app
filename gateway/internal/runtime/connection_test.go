@@ -20,6 +20,25 @@ type fakeLauncher struct {
 
 func (l fakeLauncher) Launch(context.Context) (ServeResult, error) { return l.result, l.err }
 
+// testCatalogHello 返回一个包含 Gateway 必需方法的合法 hello 响应，
+// 供测试扮演新式 catalog 握手（替代旧的 protocol_version 门控）。
+func testCatalogHello() map[string]any {
+	return map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"result": map[string]any{
+			"runtime_version": "test",
+			"transport":      "tcp",
+			"catalog": map[string]any{
+				"methods":       requiredCatalogMethods,
+				"notifications": []string{},
+				"features":      []string{},
+			},
+			"content_sources": map[string]any{},
+		},
+	}
+}
+
 func TestCommandLauncherDoesNotInheritDaemonMode(t *testing.T) {
 	original := runCommand
 	t.Cleanup(func() { runCommand = original })
@@ -58,7 +77,7 @@ func TestConnectionManagerConnectRequestAndNotification(t *testing.T) {
 			serverDone <- errors.New("runtime.hello was not sent first")
 			return
 		}
-		if err := writeTestJSON(conn, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}}); err != nil {
+		if err := writeTestJSON(conn, testCatalogHello()); err != nil {
 			serverDone <- err
 			return
 		}
@@ -121,7 +140,7 @@ func TestConnectionDispatchesConcurrentResponsesByID(t *testing.T) {
 		defer conn.Close()
 		reader := bufio.NewReader(conn)
 		_ = readTestMessage(t, reader)
-		_ = writeTestJSON(conn, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}})
+		_ = writeTestJSON(conn, testCatalogHello())
 		first := readTestMessage(t, reader)
 		second := readTestMessage(t, reader)
 		// Responses deliberately arrive in the opposite order from requests.
@@ -174,7 +193,7 @@ func TestConnectionReturnsTypedRPCErrorAndHonorsCancellation(t *testing.T) {
 		defer conn.Close()
 		reader := bufio.NewReader(conn)
 		_ = readTestMessage(t, reader)
-		_ = writeTestJSON(conn, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}})
+		_ = writeTestJSON(conn, testCatalogHello())
 		first := readTestMessage(t, reader)
 		_ = writeTestJSON(conn, map[string]any{"jsonrpc": "2.0", "id": first.ID, "error": map[string]any{"code": -32042, "message": "denied", "data": map[string]bool{"retry": false}}})
 		// Consume the canceled request without replying, then keep the socket alive.
@@ -212,7 +231,7 @@ func TestConnectionRejectsOversizedFrameAndCloses(t *testing.T) {
 		defer conn.Close()
 		reader := bufio.NewReader(conn)
 		_ = readTestMessage(t, reader)
-		_ = writeTestJSON(conn, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}})
+		_ = writeTestJSON(conn, testCatalogHello())
 		// Handshake uses the manager's frame limit too, so send it before restricting it.
 		<-time.After(20 * time.Millisecond)
 		_, _ = conn.Write([]byte("{" + string(make([]byte, 1024)) + "\n"))
@@ -249,7 +268,7 @@ func TestConnectionAcceptsLargeFrameOverOld64KBLimit(t *testing.T) {
 		defer conn.Close()
 		reader := bufio.NewReader(conn)
 		_ = readTestMessage(t, reader) // runtime.hello
-		_ = writeTestJSON(conn, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}})
+		_ = writeTestJSON(conn, testCatalogHello())
 		message := readTestMessage(t, reader) // session.attach
 		large := map[string]any{
 			"jsonrpc": "2.0",
@@ -312,7 +331,7 @@ func TestConnectionManagerCanceledCreatorDoesNotCancelSharedLaunch(t *testing.T)
 				if _, err := reader.ReadBytes('\n'); err != nil {
 					return
 				}
-				_ = writeTestJSON(server, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}})
+				_ = writeTestJSON(server, testCatalogHello())
 				_, _ = io.Copy(io.Discard, reader)
 			}()
 			return client, nil
@@ -398,7 +417,7 @@ func TestConnectionManagerRefreshDiscoveryDoesNotCacheInFlightLaunch(t *testing.
 				if _, err := reader.ReadBytes('\n'); err != nil {
 					return
 				}
-				_ = writeTestJSON(server, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}})
+				_ = writeTestJSON(server, testCatalogHello())
 				_, _ = io.Copy(io.Discard, reader)
 			}()
 			return client, nil
@@ -612,7 +631,7 @@ func TestCommandJSONOutputReturnsAfterFirstLineWhileChildKeepsStdoutOpen(t *test
 }
 
 // performHello 必须拒绝所有非法握手响应：错误 JSONRPC 版本、RPC error、
-// 空 result、协议版本不匹配、缺少必要 capabilities。
+// 空 result、catalog 缺少必要方法。
 func TestPerformHelloRejectsInvalidResponses(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -621,7 +640,7 @@ func TestPerformHelloRejectsInvalidResponses(t *testing.T) {
 	}{
 		{
 			name:  "wrong jsonrpc version",
-			frame: map[string]any{"jsonrpc": "1.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}},
+			frame: map[string]any{"jsonrpc": "1.0", "id": 1, "result": map[string]any{"runtime_version": "test", "catalog": map[string]any{"methods": requiredCatalogMethods}}},
 			want:  ErrorProtocol,
 		},
 		{
@@ -635,13 +654,13 @@ func TestPerformHelloRejectsInvalidResponses(t *testing.T) {
 			want:  ErrorProtocol,
 		},
 		{
-			name:  "mismatched protocol version",
-			frame: map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": "0.3"}},
+			name:  "mismatched catalog methods",
+			frame: map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"runtime_version": "test", "catalog": map[string]any{"methods": []string{"session.list"}}}}, // 缺少 agent.send_message 等必需方法
 			want:  ErrorCapability,
 		},
 		{
-			name:  "missing capabilities",
-			frame: map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocol_version": ProtocolVersion}},
+			name:  "missing catalog",
+			frame: map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"runtime_version": "test"}},
 			want:  ErrorCapability,
 		},
 	}

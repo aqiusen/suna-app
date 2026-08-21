@@ -1,6 +1,8 @@
+import type { RuntimeCatalog } from "./runtimeTypes";
+
 export type RuntimeState =
   | { kind: "loading" }
-  | { kind: "ready"; protocolVersion: string }
+  | { kind: "ready"; runtimeVersion: string; catalog: RuntimeCatalog }
   | {
       kind: "unavailable" | "protocol_error" | "capability_error";
       code: string;
@@ -9,7 +11,10 @@ export type RuntimeState =
 
 type RuntimeStatusResponse = {
   status?: unknown;
-  runtime?: { protocol_version?: unknown };
+  runtime?: {
+    runtime_version?: unknown;
+    catalog?: Partial<RuntimeCatalog>;
+  };
   error?: { code?: unknown; message?: unknown };
 };
 
@@ -28,9 +33,18 @@ export async function getRuntimeStatus(
     if (
       response.ok &&
       body.status === "ready" &&
-      typeof body.runtime?.protocol_version === "string"
+      typeof body.runtime?.runtime_version === "string" &&
+      Array.isArray(body.runtime?.catalog?.methods)
     ) {
-      return { kind: "ready", protocolVersion: body.runtime.protocol_version };
+      return {
+        kind: "ready",
+        runtimeVersion: body.runtime.runtime_version,
+        catalog: {
+          methods: body.runtime.catalog?.methods ?? [],
+          notifications: body.runtime.catalog?.notifications ?? [],
+          features: body.runtime.catalog?.features ?? [],
+        },
+      };
     }
     if (
       (body.status === "unavailable" ||

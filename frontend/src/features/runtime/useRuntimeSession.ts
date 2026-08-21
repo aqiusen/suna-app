@@ -159,12 +159,18 @@ export function useRuntimeSession() {
   const { connect, rpc, connected, hello, status, error: bridgeError } = bridge;
 
   const cap = useCallback(
-    (name: string) =>
-      Boolean(
-        hello?.capabilities[name] ||
-        hello?.capabilities[`${name}.get`] ||
-        hello?.capabilities[`${name}.list`],
-      ),
+    (name: string) => {
+      const catalog = hello?.catalog;
+      if (!catalog) return false;
+      // catalog.methods 使用真实协议名（如 session.list / mcp.list / config.get）；
+      // 按能力前缀匹配：name 本身、name.get、name.list 任一命中即视为可用。
+      return (
+        catalog.methods.includes(name) ||
+        catalog.methods.includes(`${name}.get`) ||
+        catalog.methods.includes(`${name}.list`) ||
+        catalog.features.includes(name)
+      );
+    },
     [hello],
   );
   // 0.4 MCP 状态快照：mcp.list 初始加载 + mcp.updated 增量覆盖，

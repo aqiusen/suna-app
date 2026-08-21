@@ -360,10 +360,12 @@ function isBridgeConnection(value: unknown): value is BridgeConnection {
     isRecord(value) &&
     typeof value.id === "string" &&
     isRecord(value.hello) &&
-    typeof value.hello.protocol_version === "string" &&
     typeof value.hello.runtime_version === "string" &&
     typeof value.hello.transport === "string" &&
-    isRecord(value.hello.capabilities) &&
+    isRecord(value.hello.catalog) &&
+    Array.isArray(value.hello.catalog.methods) &&
+    Array.isArray(value.hello.catalog.notifications) &&
+    Array.isArray(value.hello.catalog.features) &&
     isRecord(value.hello.content_sources)
   );
 }

@@ -20,10 +20,9 @@ class FakeEventSource {
 }
 
 const hello = {
-  protocol_version: "1",
   runtime_version: "1",
   transport: "stdio",
-  capabilities: {},
+  catalog: { methods: [], notifications: [], features: [] },
   content_sources: {},
 };
 

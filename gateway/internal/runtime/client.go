@@ -16,10 +16,18 @@ const (
 	ErrorUnavailable ErrorKind = "unavailable"
 	ErrorProtocol    ErrorKind = "protocol_error"
 	ErrorCapability  ErrorKind = "capability_error"
-	// ProtocolVersion 是对接的公开协议版本；runtime 0.5 起只接受 0.5 握手，
-	// 0.4 客户端会收到 unsupported_capability 拒绝（skill scope 等新语义）。
-	ProtocolVersion = "0.5"
 )
+
+// requiredCatalogMethods 是 Gateway 正常工作所必需的最小方法集。
+// Runtime 以 capability catalog（catalog.methods）声明能力，Gateway 据此校验
+// 而非依赖单一版本号；缺失任一必需方法即判定 capability_error。
+// 方法名必须与 Runtime 公开协议一致（catalog.go 的 Method* 常量）。
+var requiredCatalogMethods = []string{
+	"session.list",
+	"session.attach",
+	"session.create",
+	"agent.sendMessage",
+}
 
 type Error struct {
 	Kind ErrorKind
@@ -34,8 +42,51 @@ type ServeResult struct {
 	TCPEndpoint string `json:"tcp_endpoint"`
 }
 
+// HelloResult 携带 Runtime 握手后返回的公开能力信息，供上层决定能力门控。
 type HelloResult struct {
-	ProtocolVersion string
+	// RuntimeVersion 是 Runtime 自身版本号，仅用于展示。
+	RuntimeVersion string
+	// Catalog 是 Runtime 声明的公开能力目录（methods/notifications/features）。
+	Catalog protocolCatalog
+}
+
+// protocolCatalog 镜像 Runtime 公开协议的 catalog 结构，仅取 Gateway 关心的字段。
+type protocolCatalog struct {
+	Methods       []string `json:"methods"`
+	Notifications []string `json:"notifications"`
+	Features      []string `json:"features"`
+}
+
+// HasMethod 报告 catalog 是否声明了指定方法。
+func (c protocolCatalog) HasMethod(name string) bool {
+	for _, m := range c.Methods {
+		if m == name {
+			return true
+		}
+	}
+	return false
+}
+
+// HasFeature 报告 catalog 是否声明了指定细粒度能力。
+func (c protocolCatalog) HasFeature(name string) bool {
+	for _, f := range c.Features {
+		if f == name {
+			return true
+		}
+	}
+	return false
+}
+
+// NewHelloResult 构造携带 catalog 的握手结果，供上层与测试构造带能力的 hello。
+func NewHelloResult(runtimeVersion string, methods, notifications, features []string) HelloResult {
+	return HelloResult{
+		RuntimeVersion: runtimeVersion,
+		Catalog: protocolCatalog{
+			Methods:       append([]string(nil), methods...),
+			Notifications: append([]string(nil), notifications...),
+			Features:      append([]string(nil), features...),
+		},
+	}
 }
 
 type Client struct {
@@ -103,15 +154,13 @@ func performHello(ctx context.Context, conn net.Conn) (HelloResult, error) {
 		ID      int    `json:"id"`
 		Method  string `json:"method"`
 		Params  struct {
-			ProtocolVersion string `json:"protocol_version"`
-			Client          struct {
+			Client struct {
 				Name    string `json:"name"`
 				Version string `json:"version"`
 				Type    string `json:"type"`
 			} `json:"client"`
 		} `json:"params"`
 	}{JSONRPC: "2.0", ID: 1, Method: "runtime.hello"}
-	request.Params.ProtocolVersion = ProtocolVersion
 	request.Params.Client.Name = "suna-app"
 	request.Params.Client.Version = "dev"
 	request.Params.Client.Type = "web_gateway"
@@ -155,19 +204,19 @@ func performHello(ctx context.Context, conn net.Conn) (HelloResult, error) {
 	}
 
 	var hello struct {
-		ProtocolVersion string `json:"protocol_version"`
-		Capabilities    struct {
-			Agent   bool `json:"agent"`
-			Session bool `json:"session"`
-		} `json:"capabilities"`
+		RuntimeVersion string         `json:"runtime_version"`
+		Catalog        protocolCatalog `json:"catalog"`
 	}
-	if err := json.Unmarshal(response.Result, &hello); err != nil || hello.ProtocolVersion != ProtocolVersion {
-		return HelloResult{}, &Error{Kind: ErrorCapability, Err: fmt.Errorf("runtime does not support the required protocol")}
+	if err := json.Unmarshal(response.Result, &hello); err != nil {
+		return HelloResult{}, &Error{Kind: ErrorProtocol, Err: fmt.Errorf("runtime returned an invalid handshake response")}
 	}
-	if !hello.Capabilities.Agent || !hello.Capabilities.Session {
-		return HelloResult{}, &Error{Kind: ErrorCapability, Err: fmt.Errorf("runtime does not support the required capabilities")}
+	// 以 catalog 声明的方法集为准，缺失任一必需方法即判定能力不足。
+	for _, m := range requiredCatalogMethods {
+		if !hello.Catalog.HasMethod(m) {
+			return HelloResult{}, &Error{Kind: ErrorCapability, Err: fmt.Errorf("runtime does not support required method %q", m)}
+		}
 	}
-	return HelloResult{ProtocolVersion: hello.ProtocolVersion}, nil
+	return HelloResult{RuntimeVersion: hello.RuntimeVersion, Catalog: hello.Catalog}, nil
 }
 
 // maxRuntimeFrameBytes 是 TCP JSON-RPC 单帧上限。Runtime 的公开 TCP transport

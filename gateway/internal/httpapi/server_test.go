@@ -27,7 +27,7 @@ func (p fakeProber) Probe(context.Context) (runtime.HelloResult, error) {
 func TestRuntimeStatusReady(t *testing.T) {
 	t.Parallel()
 
-	handler := NewServer(fakeProber{result: runtime.HelloResult{ProtocolVersion: "0.4"}}, time.Second)
+	handler := NewServer(fakeProber{result: runtime.NewHelloResult("test", []string{"session.list", "session.attach", "session.create", "agent.sendMessage"}, nil, nil)}, time.Second)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

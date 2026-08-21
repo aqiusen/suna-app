@@ -8,11 +8,16 @@ export type JSONValue =
   JSONPrimitive | JSONValue[] | { [key: string]: JSONValue };
 export type JSONRecord = Record<string, JSONValue>;
 
+export type RuntimeCatalog = {
+  methods: string[];
+  notifications: string[];
+  features: string[];
+};
+
 export type RuntimeHello = {
-  protocol_version: string;
   runtime_version: string;
   transport: string;
-  capabilities: Record<string, boolean>;
+  catalog: RuntimeCatalog;
   content_sources: Record<string, boolean>;
   limits?: Record<string, number>;
   metadata?: JSONRecord;

@@ -136,7 +136,8 @@ func New(connector Connector, config Config) (*Service, error) {
 		config.Random = rand.Reader
 	}
 	if len(config.Hello) == 0 {
-		config.Hello = json.RawMessage(`{"protocol_version":"` + runtime.ProtocolVersion + `"}`)
+		// 兜底 hello 仅供测试连接器使用；真实 Runtime 连接总是携带协商后的 catalog。
+		config.Hello = json.RawMessage(`{"runtime_version":"dev","transport":"tcp","catalog":{"methods":[],"notifications":[],"features":[]},"content_sources":{}}`)
 	}
 	if !json.Valid(config.Hello) {
 		return nil, fmt.Errorf("bridge hello must be JSON")

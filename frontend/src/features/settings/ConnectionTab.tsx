@@ -130,7 +130,9 @@ export function ConnectionTab({
             <InfoRow label="Runtime" value={hello?.runtime_version ?? "—"} />
             <InfoRow
               label={t("conn.protocol")}
-              value={hello?.protocol_version ?? "—"}
+              value={
+                hello?.catalog ? `${hello.catalog.methods.length} methods` : "—"
+              }
             />
             <InfoRow
               label={t("conn.context")}

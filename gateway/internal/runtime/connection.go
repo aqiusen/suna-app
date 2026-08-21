@@ -269,12 +269,19 @@ func (m *ConnectionManager) Probe(ctx context.Context) (HelloResult, error) {
 	}
 	defer connection.Close()
 	var hello struct {
-		ProtocolVersion string `json:"protocol_version"`
+		RuntimeVersion string         `json:"runtime_version"`
+		Catalog        protocolCatalog `json:"catalog"`
 	}
 	if err := json.Unmarshal(connection.Hello(), &hello); err != nil {
 		return HelloResult{}, &Error{Kind: ErrorProtocol, Err: fmt.Errorf("runtime returned an invalid handshake response")}
 	}
-	return HelloResult{ProtocolVersion: hello.ProtocolVersion}, nil
+	// 与 performHello 一致，按 catalog 必需方法校验能力。
+	for _, m := range requiredCatalogMethods {
+		if !hello.Catalog.HasMethod(m) {
+			return HelloResult{}, &Error{Kind: ErrorCapability, Err: fmt.Errorf("runtime does not support required method %q", m)}
+		}
+	}
+	return HelloResult{RuntimeVersion: hello.RuntimeVersion, Catalog: hello.Catalog}, nil
 }
 
 func (m *ConnectionManager) launch(ctx context.Context) (ServeResult, error) {
@@ -668,15 +675,13 @@ func performConnectionHello(ctx context.Context, conn net.Conn, reader *bufio.Re
 		ID      uint64 `json:"id"`
 		Method  string `json:"method"`
 		Params  struct {
-			ProtocolVersion string `json:"protocol_version"`
-			Client          struct {
+			Client struct {
 				Name    string `json:"name"`
 				Version string `json:"version"`
 				Type    string `json:"type"`
 			} `json:"client"`
 		} `json:"params"`
 	}{JSONRPC: "2.0", ID: 1, Method: "runtime.hello"}
-	request.Params.ProtocolVersion = ProtocolVersion
 	request.Params.Client.Name = config.ClientName
 	request.Params.Client.Version = config.ClientVersion
 	request.Params.Client.Type = config.ClientType
@@ -708,10 +713,16 @@ func performConnectionHello(ctx context.Context, conn net.Conn, reader *bufio.Re
 		return nil, &Error{Kind: ErrorCapability, Err: response.Error}
 	}
 	var hello struct {
-		ProtocolVersion string `json:"protocol_version"`
+		Catalog protocolCatalog `json:"catalog"`
 	}
-	if len(response.Result) == 0 || json.Unmarshal(response.Result, &hello) != nil || hello.ProtocolVersion != ProtocolVersion {
-		return nil, &Error{Kind: ErrorCapability, Err: fmt.Errorf("runtime does not support protocol %s", ProtocolVersion)}
+	if len(response.Result) == 0 || json.Unmarshal(response.Result, &hello) != nil {
+		return nil, &Error{Kind: ErrorProtocol, Err: fmt.Errorf("runtime returned an invalid handshake response")}
+	}
+	// 以 catalog 声明的方法集为准，缺失任一必需方法即判定能力不足。
+	for _, m := range requiredCatalogMethods {
+		if !hello.Catalog.HasMethod(m) {
+			return nil, &Error{Kind: ErrorCapability, Err: fmt.Errorf("runtime does not support required method %q", m)}
+		}
 	}
 	return append(json.RawMessage(nil), response.Result...), nil
 }

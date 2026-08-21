@@ -124,7 +124,14 @@ func (s *Server) runtimeStatus(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "ready",
-			"runtime": map[string]string{"protocol_version": hello.ProtocolVersion},
+			"runtime": map[string]any{
+				"runtime_version": hello.RuntimeVersion,
+				"catalog": map[string]any{
+					"methods":       hello.Catalog.Methods,
+					"notifications": hello.Catalog.Notifications,
+					"features":      hello.Catalog.Features,
+				},
+			},
 		})
 		return
 	}

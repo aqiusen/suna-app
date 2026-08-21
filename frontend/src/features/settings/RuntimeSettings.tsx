@@ -5,6 +5,7 @@ import type { Theme } from "../../lib/models";
 import type {
   MCPServerInfo,
   MemoryItem,
+  RuntimeCatalog,
   RuntimeConfig,
   SkillInfo,
 } from "../../lib/runtimeBridge";
@@ -19,7 +20,7 @@ import { SkillsTab } from "./SkillsTab";
 type SettingsProps = {
   cap: (name: string) => boolean;
   config?: RuntimeConfig;
-  hello?: { protocol_version: string; runtime_version: string };
+  hello?: { runtime_version: string; catalog: RuntimeCatalog };
   mcpServers: MCPServerInfo[];
   onConfig: (config: RuntimeConfig) => void;
   onClose: () => void;
@@ -38,7 +39,7 @@ type SettingsProps = {
 export type SettingsTabProps = {
   cap: (name: string) => boolean;
   config?: RuntimeConfig;
-  hello?: { protocol_version: string; runtime_version: string };
+  hello?: { runtime_version: string; catalog: RuntimeCatalog };
   mcpServers: MCPServerInfo[];
   onConfig: (config: RuntimeConfig) => void;
   refreshMcp: () => void;
