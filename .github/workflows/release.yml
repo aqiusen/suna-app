@@ -78,7 +78,8 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum v* > checksums.txt
+        # macOS 无 sha256sum，用 shasum -a 256（macOS 自带）。
+        run: shasum -a 256 v* > checksums.txt
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
