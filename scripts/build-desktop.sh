@@ -65,6 +65,21 @@ mkdir -p "$DIST_DIR"
 )
 
 if [ "$GOOS" = "darwin" ]; then
+  expected_macho_arch="x86_64"
+  if [ "$GOARCH" = "arm64" ]; then
+    expected_macho_arch="arm64"
+  fi
+  assert_macho_arch() {
+    local binary="$1"
+    local description="$2"
+    local info
+    info="$(file "$binary")"
+    if [[ "$info" != *"$expected_macho_arch"* ]]; then
+      printf '%s\n' "${description} has wrong architecture for darwin-${GOARCH}: ${info}" >&2
+      exit 1
+    fi
+  }
+
   APP_ROOT="$DIST_DIR/Suna.app"
   mkdir -p "$APP_ROOT/Contents/MacOS"
   mkdir -p "$APP_ROOT/Contents/Resources/runtime"
@@ -72,6 +87,10 @@ if [ "$GOOS" = "darwin" ]; then
   cp "$ROOT_DIR/packaging/macos/Info.plist" "$APP_ROOT/Contents/Info.plist"
   cp "$RUNTIME_SRC" "$APP_ROOT/Contents/Resources/runtime/suna"
   chmod +x "$APP_ROOT/Contents/MacOS/suna-app" "$APP_ROOT/Contents/Resources/runtime/suna"
+  # 打包边界校验：桌面包内 App 与 sidecar Runtime 必须同架构，
+  # 否则 Apple Silicon / Intel Mac 会在 LaunchServices 阶段直接启动失败。
+  assert_macho_arch "$APP_ROOT/Contents/MacOS/suna-app" "suna-app"
+  assert_macho_arch "$APP_ROOT/Contents/Resources/runtime/suna" "bundled Runtime"
   INSTALLER="$DIST_DIR/Install Suna.command"
   cp "$ROOT_DIR/packaging/macos/Install Suna.command" "$INSTALLER"
   chmod +x "$INSTALLER"
@@ -82,6 +101,7 @@ if [ "$GOOS" = "darwin" ]; then
   mkdir -p "$STAGING"
   cp -R "$APP_ROOT" "$STAGING/Suna.app"
   cp "$INSTALLER" "$STAGING/Install Suna.command"
+  cp "$ROOT_DIR/packaging/macos/README.txt" "$STAGING/README.txt"
   # 提供指向 /Applications 的软链，用户拖拽 Suna.app 到 Applications 即完成安装。
   ln -s /Applications "$STAGING/Applications"
   ARCHIVE="$ROOT_DIR/dist/${VERSION}-suna-desktop-${GOOS}-${GOARCH}.dmg"
