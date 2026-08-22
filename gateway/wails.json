@@ -2,9 +2,9 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "Suna",
   "outputfilename": "Suna",
-  "frontend:install": "cd ../frontend && pnpm install",
-  "frontend:build": "cd ../frontend && pnpm build && ../scripts/stage-frontend.sh",
-  "frontend:dev:watcher": "cd ../frontend && pnpm dev",
+  "frontend:install": "pnpm --dir ../frontend install",
+  "frontend:build": "node ../scripts/wails-frontend-build.mjs",
+  "frontend:dev:watcher": "pnpm --dir ../frontend dev",
   "frontend:dev:serverUrl": "http://127.0.0.1:5173",
   "author": {
     "name": "Suna"
