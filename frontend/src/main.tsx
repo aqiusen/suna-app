@@ -3,8 +3,10 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { ToastProvider } from "./components/ui/Toast";
 import { TooltipProvider } from "./components/ui/Tooltip";
+import { configureGatewayBaseUrl } from "./lib/desktopGateway";
 import { bindDesktopUnloadShutdown } from "./lib/gatewayShutdown";
 
+await configureGatewayBaseUrl();
 bindDesktopUnloadShutdown();
 
 const root = document.getElementById("root");

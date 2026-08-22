@@ -8,6 +8,7 @@ import {
   type SetStateAction,
 } from "react";
 import { useToast } from "../../components/ui/Toast";
+import { getDesktopToken, getGatewayBaseUrl } from "../../lib/desktopGateway";
 import { t } from "../../lib/i18n";
 import type {
   MCPServerInfo,
@@ -171,6 +172,8 @@ export function useRuntimeSession() {
     [],
   );
   const bridge = useRuntimeBridge({
+    baseUrl: getGatewayBaseUrl(),
+    desktopToken: getDesktopToken(),
     onNotification,
     onEventError,
     onReconnected,

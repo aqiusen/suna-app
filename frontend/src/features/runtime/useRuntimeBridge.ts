@@ -17,7 +17,7 @@ export type RuntimeBridgeStatus =
 
 export type UseRuntimeBridgeOptions = Pick<
   RuntimeBridgeClientOptions,
-  "baseUrl" | "timeoutMs" | "fetch" | "eventSourceFactory"
+  "baseUrl" | "desktopToken" | "timeoutMs" | "fetch" | "eventSourceFactory"
 > & {
   /** 通知按到达即投递，本 hook 不保留任何事件。
    * receivedAt 为解析层收到事件的时刻（工具计时用）。 */

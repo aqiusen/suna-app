@@ -1,9 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bindDesktopUnloadShutdown,
   isDesktopShell,
   requestGatewayShutdown,
 } from "./gatewayShutdown";
+
+beforeEach(() => {
+  delete window.__SUNA_GATEWAY_BASE_URL__;
+  delete window.__SUNA_DESKTOP_TOKEN__;
+  delete window.go;
+});
 
 describe("requestGatewayShutdown", () => {
   it("POSTs /api/v1/shutdown", async () => {
@@ -14,9 +20,31 @@ describe("requestGatewayShutdown", () => {
     });
   });
 
+  it("uses the native gateway base URL when present", async () => {
+    window.__SUNA_GATEWAY_BASE_URL__ = "http://127.0.0.1:49152";
+    window.__SUNA_DESKTOP_TOKEN__ = "test-token";
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, status: 202 });
+    await requestGatewayShutdown(fetcher as unknown as typeof fetch);
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://127.0.0.1:49152/api/v1/shutdown?desktop_token=test-token",
+      { method: "POST" },
+    );
+  });
+
   it("detects desktop shell from query", () => {
     expect(isDesktopShell("?desktop=1")).toBe(true);
     expect(isDesktopShell("")).toBe(false);
+  });
+
+  it("detects native desktop shell from Wails binding", () => {
+    window.go = {
+      main: {
+        App: {
+          GatewayAuth: vi.fn(),
+        },
+      },
+    };
+    expect(isDesktopShell("")).toBe(true);
   });
 
   it("binds pagehide shutdown only in desktop shell", () => {

@@ -150,7 +150,7 @@ C:\Users\<用户名>\AppData\Local\Programs\Suna\
    - `v0.1.0-suna-desktop-darwin-arm64.dmg`（Apple Silicon）
    - `v0.1.0-suna-desktop-darwin-amd64.dmg`（Intel Mac）
 
-workflow 会从 `alanchenchen/suna` 的公开 Release 下载 Runtime，再调用 `scripts/build-desktop.sh` 组装 `Suna.app` 并用 `hdiutil` 打成 dmg。本仓库不 checkout、不编译 Runtime 源码。
+workflow 会从 `aqiusen/suna` 的公开 Release 下载 Runtime，再调用 `scripts/build-desktop.sh` 组装 `Suna.app` 并用 `hdiutil` 打成 dmg。本仓库不 checkout、不编译 Runtime 源码。
 
 推送 `v*` tag 时，正式 `release.yml` 也会附带这两份 darwin 桌面 dmg。Runtime tag 钉在 workflow 里的 `SUNA_RUNTIME_TAG`，改捆绑版本时改那一处。
 

@@ -163,3 +163,47 @@ func TestSameOriginUnsafeRemoteMode(t *testing.T) {
 		})
 	}
 }
+
+func TestDesktopTokenAllowsOnlyLoopbackWebViewOrigin(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{desktopToken: "test-token"}
+	allowed := httptest.NewRequest(http.MethodPost, "/api/v1/bridge/connect?desktop_token=test-token", nil)
+	allowed.RemoteAddr = "127.0.0.1:49153"
+	allowed.Host = "127.0.0.1:7633"
+	allowed.Header.Set("Origin", "wails://wails.localhost")
+	if !srv.sameOriginUnsafe(allowed) {
+		t.Fatal("desktop token from loopback WebView origin was rejected")
+	}
+
+	wrongToken := allowed.Clone(context.Background())
+	wrongToken.URL.RawQuery = "desktop_token=wrong"
+	if srv.sameOriginUnsafe(wrongToken) {
+		t.Fatal("wrong desktop token was accepted")
+	}
+
+	remote := allowed.Clone(context.Background())
+	remote.RemoteAddr = "192.168.1.10:49153"
+	if srv.sameOriginUnsafe(remote) {
+		t.Fatal("desktop token from remote address was accepted")
+	}
+}
+
+func TestDesktopTokenCORSPreflight(t *testing.T) {
+	t.Parallel()
+
+	handler := NewServerWithLifecycleAndDesktopToken(fakeProber{}, time.Second, nil, false, "test-token", nil)
+	request := httptest.NewRequest(http.MethodOptions, "/api/v1/bridge/connect?desktop_token=test-token", nil)
+	request.RemoteAddr = "127.0.0.1:49153"
+	request.Header.Set("Origin", "wails://wails.localhost")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d, want %d", response.Code, http.StatusNoContent)
+	}
+	if got := response.Header().Get("Access-Control-Allow-Origin"); got != "wails://wails.localhost" {
+		t.Fatalf("Access-Control-Allow-Origin = %q", got)
+	}
+}

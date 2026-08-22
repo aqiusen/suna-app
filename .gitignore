@@ -47,5 +47,10 @@ lerna-debug.log*
 
 # Release and desktop packaging output
 /dist/
+gateway/build/*
+!gateway/build/darwin/
+gateway/build/darwin/*
+!gateway/build/darwin/Info.plist
+gateway/frontend/
 frontend/src-tauri/target/
 frontend/src-tauri/gen/

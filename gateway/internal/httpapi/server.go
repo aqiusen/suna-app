@@ -31,6 +31,9 @@ type Server struct {
 	allowRemote bool
 	// onShutdown 由进程入口注入；仅 loopback 的 POST /api/v1/shutdown 会触发。
 	onShutdown func()
+	// desktopToken 只给本机 WebView 桌面壳使用：Wails 页面的 origin 与
+	// loopback Gateway 不同，必须靠随机 token 放行，不能扩大普通浏览器 CSRF 边界。
+	desktopToken string
 
 	probeMu       sync.Mutex
 	lastProbe     probeResult
@@ -57,7 +60,7 @@ func NewServer(prober RuntimeProber, probeTimeout time.Duration, services ...*br
 	if len(services) != 0 {
 		service = services[0]
 	}
-	return newServer(prober, probeTimeout, service, false, nil)
+	return newServer(prober, probeTimeout, service, false, "", nil)
 }
 
 // NewServerWithBridge makes the browser bridge dependency explicit for callers
@@ -65,16 +68,22 @@ func NewServer(prober RuntimeProber, probeTimeout time.Duration, services ...*br
 // 传 true 表示监听非 loopback 地址（远程模式，见 Server.allowRemote 注释）。
 func NewServerWithBridge(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote ...bool) http.Handler {
 	remote := len(allowRemote) > 0 && allowRemote[0]
-	return newServer(prober, probeTimeout, service, remote, nil)
+	return newServer(prober, probeTimeout, service, remote, "", nil)
 }
 
 // NewServerWithLifecycle 与 NewServerWithBridge 相同，并注册本机退出回调。
 func NewServerWithLifecycle(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote bool, onShutdown func()) http.Handler {
-	return newServer(prober, probeTimeout, service, allowRemote, onShutdown)
+	return newServer(prober, probeTimeout, service, allowRemote, "", onShutdown)
 }
 
-func newServer(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote bool, onShutdown func()) http.Handler {
-	s := &Server{prober: prober, probeTimeout: probeTimeout, bridge: service, allowRemote: allowRemote, onShutdown: onShutdown}
+// NewServerWithLifecycleAndDesktopToken 与 NewServerWithLifecycle 相同，但允许
+// 本机桌面 WebView 用随机 token 跨 origin 访问 loopback Gateway。
+func NewServerWithLifecycleAndDesktopToken(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote bool, desktopToken string, onShutdown func()) http.Handler {
+	return newServer(prober, probeTimeout, service, allowRemote, desktopToken, onShutdown)
+}
+
+func newServer(prober RuntimeProber, probeTimeout time.Duration, service *bridge.Service, allowRemote bool, desktopToken string, onShutdown func()) http.Handler {
+	s := &Server{prober: prober, probeTimeout: probeTimeout, bridge: service, allowRemote: allowRemote, desktopToken: strings.TrimSpace(desktopToken), onShutdown: onShutdown}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/v1/runtime/status", s.runtimeStatus)
@@ -85,7 +94,7 @@ func newServer(prober RuntimeProber, probeTimeout time.Duration, service *bridge
 		mux.HandleFunc("GET /api/v1/bridge/{id}/events", s.bridgeEvents)
 		mux.HandleFunc("DELETE /api/v1/bridge/{id}", s.bridgeDisconnect)
 	}
-	return securityHeaders(mux)
+	return s.securityHeaders(mux)
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
@@ -324,6 +333,9 @@ func (s *Server) sameOriginUnsafe(r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
+	if s.validDesktopToken(r) {
+		return true
+	}
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return false
@@ -345,6 +357,12 @@ func (s *Server) sameOriginUnsafe(r *http.Request) bool {
 			strings.EqualFold(originHost, requestHost)
 	}
 	return originPort == requestPort && sameLoopbackHost(originHost, requestHost)
+}
+
+func (s *Server) validDesktopToken(r *http.Request) bool {
+	return s.desktopToken != "" &&
+		requestIsLoopback(r) &&
+		r.URL.Query().Get("desktop_token") == s.desktopToken
 }
 
 func requestScheme(r *http.Request) string {
@@ -447,10 +465,22 @@ func safeMessage(kind runtime.ErrorKind) string {
 	}
 }
 
-func securityHeaders(next http.Handler) http.Handler {
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if s.validDesktopToken(r) {
+			if origin := r.Header.Get("Origin"); origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+			}
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }

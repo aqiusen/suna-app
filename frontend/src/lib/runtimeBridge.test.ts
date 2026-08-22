@@ -29,6 +29,32 @@ const hello = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("RuntimeBridgeClient stream lifecycle", () => {
+  it("adds the desktop token to HTTP and SSE bridge URLs", async () => {
+    const sources: FakeEventSource[] = [];
+    const fetcher = vi.fn(async () => Response.json({ id: "bridge-1", hello }));
+    const client = new RuntimeBridgeClient({
+      baseUrl: "http://127.0.0.1:49152",
+      desktopToken: "test-token",
+      fetch: fetcher as typeof fetch,
+      eventSourceFactory: (url) => {
+        const source = new FakeEventSource(url);
+        sources.push(source);
+        return source as unknown as EventSource;
+      },
+    });
+
+    await client.connect();
+    client.subscribe(() => undefined);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://127.0.0.1:49152/api/v1/bridge/connect?desktop_token=test-token",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(sources[0].url).toBe(
+      "http://127.0.0.1:49152/api/v1/bridge/bridge-1/events?desktop_token=test-token",
+    );
+  });
+
   it("ignores an old EventSource error after explicit reconnect", async () => {
     const sources: FakeEventSource[] = [];
     let connectCount = 0;

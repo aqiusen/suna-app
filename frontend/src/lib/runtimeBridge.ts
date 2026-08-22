@@ -34,6 +34,7 @@ export class RuntimeBridgeError extends Error {
 
 export type RuntimeBridgeClientOptions = {
   baseUrl?: string;
+  desktopToken?: string;
   timeoutMs?: number;
   fetch?: typeof globalThis.fetch;
   eventSourceFactory?: (url: string) => EventSource;
@@ -44,6 +45,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 export class RuntimeBridgeClient {
   private readonly baseUrl: string;
+  private readonly desktopToken: string;
   private readonly timeoutMs: number;
   private readonly fetcher: typeof globalThis.fetch;
   private readonly eventSourceFactory: (url: string) => EventSource;
@@ -58,6 +60,7 @@ export class RuntimeBridgeClient {
 
   constructor(options: RuntimeBridgeClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? "";
+    this.desktopToken = options.desktopToken ?? "";
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.eventSourceFactory =
@@ -156,7 +159,7 @@ export class RuntimeBridgeClient {
     // 旧 EventSource 的回调失效。
     const generation = ++this.lifecycleGeneration;
     const source = this.eventSourceFactory(
-      `${this.baseUrl}${ROOT}/${encodeURIComponent(id)}/events`,
+      this.url(`${ROOT}/${encodeURIComponent(id)}/events`),
     );
     this.activeSource?.close();
     this.activeSource = source;
@@ -309,7 +312,7 @@ export class RuntimeBridgeClient {
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     let response: Response;
     try {
-      response = await this.fetcher(`${this.baseUrl}${path}`, {
+      response = await this.fetcher(this.url(path), {
         method,
         signal: combined,
         headers:
@@ -350,6 +353,12 @@ export class RuntimeBridgeClient {
       );
     }
     return body;
+  }
+  private url(path: string): string {
+    if (!this.desktopToken) return `${this.baseUrl}${path}`;
+    const url = new URL(path, this.baseUrl);
+    url.searchParams.set("desktop_token", this.desktopToken);
+    return url.toString();
   }
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
