@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useToast } from "../../components/ui/Toast";
 import { t } from "../../lib/i18n";
 import type {
@@ -52,6 +60,16 @@ export function useRuntimeSession() {
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  const setRuntimeConfig = useCallback<
+    Dispatch<SetStateAction<RuntimeConfig | undefined>>
+  >((value) => {
+    setConfig((current) =>
+      normalizeRuntimeConfig(
+        typeof value === "function" ? value(current) : value,
+      ),
+    );
+  }, []);
 
   const setSyncBoundary = useCallback((value: boolean) => {
     syncingRef.current = value;
@@ -121,7 +139,7 @@ export function useRuntimeSession() {
     () =>
       createNotificationHandler({
         setActive,
-        setConfig,
+        setConfig: setRuntimeConfig,
         queueDelta,
         flushDeltas,
         acceptsRun,
@@ -141,6 +159,7 @@ export function useRuntimeSession() {
       mergeMcp,
       mergeSession,
       queueDelta,
+      setRuntimeConfig,
     ],
   );
   const onEventError = useCallback(
@@ -370,9 +389,9 @@ export function useRuntimeSession() {
       .catch(() => undefined);
     if (cap("config"))
       void rpc("config.get", {})
-        .then(setConfig)
+        .then(setRuntimeConfig)
         .catch(() => undefined);
-  }, [cap, connected, rpc]);
+  }, [cap, connected, rpc, setRuntimeConfig]);
 
   const selected = useMemo(
     () =>
@@ -430,7 +449,7 @@ export function useRuntimeSession() {
     initialize,
     ...actions,
     // 设置面板需要 setConfig 更新默认模型后的本地状态。
-    setConfig,
+    setConfig: setRuntimeConfig,
     // 0.4 MCP 状态快照与刷新。
     mcpServers,
     refreshMcp,
@@ -438,3 +457,18 @@ export function useRuntimeSession() {
 }
 
 export type { RuntimeNotification };
+
+export function normalizeRuntimeConfig(
+  value: RuntimeConfig | undefined,
+): RuntimeConfig | undefined {
+  if (!value) return value;
+  const models = Array.isArray(value.models) ? value.models : [];
+  return {
+    ...value,
+    models: models.map((model) => ({
+      ...model,
+      strengths: Array.isArray(model.strengths) ? model.strengths : [],
+      subtask_for: Array.isArray(model.subtask_for) ? model.subtask_for : [],
+    })),
+  };
+}
