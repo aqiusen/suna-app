@@ -13,7 +13,7 @@ on:
       runtime_tag:
         description: Suna Runtime GitHub release tag to bundle
         required: true
-        default: v0.21.0
+        default: v0.20.1
   push:
     branches:
       - feat/desktop-sidecar-bundle
@@ -27,7 +27,7 @@ jobs:
     runs-on: macos-latest
     env:
       APP_VERSION: ${{ inputs.app_version || 'v0.1.0' }}
-      RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.21.0' }}
+      RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.20.1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,7 +57,7 @@ jobs:
 
       - name: Build darwin-arm64 desktop dmg
         env:
-          SUNA_RUNTIME_REPO: alanchenchen/suna
+          SUNA_RUNTIME_REPO: aqiusen/suna
         run: |
           set -euo pipefail
           dest="${RUNNER_TEMP}/suna-runtime/darwin-arm64/suna"

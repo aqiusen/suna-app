@@ -66,8 +66,8 @@ jobs:
       # macOS runner 自带 hdiutil/zip，用于把 Suna.app 打成 dmg。
       - name: Build darwin desktop sidecar dmg
         env:
-          SUNA_RUNTIME_REPO: alanchenchen/suna
-          SUNA_RUNTIME_TAG: v0.21.0
+          SUNA_RUNTIME_REPO: aqiusen/suna
+          SUNA_RUNTIME_TAG: v0.20.1
         run: |
           set -euo pipefail
           for arch in arm64 amd64; do
@@ -94,8 +94,8 @@ jobs:
     runs-on: windows-latest
     env:
       APP_VERSION: ${{ github.ref_name }}
-      RUNTIME_TAG: v0.21.0
-      SUNA_RUNTIME_REPO: alanchenchen/suna
+      RUNTIME_TAG: v0.20.1
+      SUNA_RUNTIME_REPO: aqiusen/suna
     steps:
       - name: Checkout
         uses: actions/checkout@v4

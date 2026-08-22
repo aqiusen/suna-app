@@ -1,6 +1,6 @@
 name: Desktop Windows
 
-# Builds the one-click Windows installer with bundled Runtime v0.21.0.
+# Builds the one-click Windows installer with bundled Runtime v0.20.1.
 # End users do not need to install or download Runtime separately.
 # workflow_dispatch appears in the UI after this file reaches the default branch.
 on:
@@ -9,11 +9,11 @@ on:
       app_version:
         description: Version written into suna-app and the setup name
         required: true
-        default: v0.21.0
+        default: v0.20.1
       runtime_tag:
         description: Suna Runtime GitHub release tag to bundle
         required: true
-        default: v0.21.0
+        default: v0.20.1
 
 permissions:
   contents: read
@@ -24,8 +24,8 @@ jobs:
     runs-on: windows-latest
     env:
       APP_VERSION: ${{ inputs.app_version || github.ref_name }}
-      RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.21.0' }}
-      SUNA_RUNTIME_REPO: alanchenchen/suna
+      RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.20.1' }}
+      SUNA_RUNTIME_REPO: aqiusen/suna
     steps:
       - name: Checkout
         uses: actions/checkout@v4
