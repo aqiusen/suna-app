@@ -2,7 +2,7 @@ name: Desktop macOS
 
 # 打 macOS 桌面一体包（Suna.app + 捆绑 Runtime）。
 # 不创建 GitHub Release；产物在 Actions Artifacts 里下载。
-# workflow_dispatch 要等这个文件进默认分支后才出现在 UI；当前 feature 分支用 push 触发。
+# 正式发版由 release.yml 的 v* tag 触发；这里仅保留手动调试入口，避免推分支和推 tag 重复打包。
 on:
   workflow_dispatch:
     inputs:
@@ -14,9 +14,6 @@ on:
         description: Suna Runtime GitHub release tag to bundle
         required: true
         default: v0.20.1
-  push:
-    branches:
-      - feat/desktop-sidecar-bundle
 
 permissions:
   contents: read
