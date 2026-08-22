@@ -149,5 +149,5 @@ dist/v0.1.0-suna-wails-windows-amd64.zip
 
 - Wails 依赖平台 WebView，CI 要分别在 macOS / Windows / Linux runner 构建。
 - 未签名 macOS app 仍会遇到 Gatekeeper；公开分发前必须做 Apple 签名与公证。
-- 现有 `scripts/build-desktop.sh` 仍保留，用作浏览器 app-mode 包和回退路径。
+- 旧的 `scripts/build-desktop.sh` 仅保留作本地回退；GitHub Actions 发版只构建 Wails 产物。
 - 第一阶段 Wails 桌面监听随机 loopback 端口；远程手机控制仍由原 `suna-app` Gateway 路径承担。

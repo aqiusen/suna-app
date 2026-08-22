@@ -51,35 +51,40 @@ jobs:
           check-latest: true
           cache: false
 
+      - name: Install Wails CLI
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      - name: Build darwin-arm64 desktop dmg
+      - name: Build darwin-arm64 Wails dmg
         env:
           SUNA_RUNTIME_REPO: aqiusen/suna
         run: |
           set -euo pipefail
           dest="${RUNNER_TEMP}/suna-runtime/darwin-arm64/suna"
           bash ./scripts/fetch-suna-runtime.sh "${RUNTIME_TAG}" darwin arm64 "$dest"
-          SUNA_RUNTIME="$dest" bash ./scripts/build-desktop.sh "${APP_VERSION}" darwin arm64
+          SUNA_RUNTIME="$dest" bash ./scripts/build-wails-desktop.sh "${APP_VERSION}" darwin arm64
 
-      - name: Build darwin-amd64 desktop dmg
+      - name: Build darwin-amd64 Wails dmg
         run: |
           set -euo pipefail
           dest="${RUNNER_TEMP}/suna-runtime/darwin-amd64/suna"
           bash ./scripts/fetch-suna-runtime.sh "${RUNTIME_TAG}" darwin amd64 "$dest"
-          SUNA_RUNTIME="$dest" bash ./scripts/build-desktop.sh "${APP_VERSION}" darwin amd64
+          SUNA_RUNTIME="$dest" bash ./scripts/build-wails-desktop.sh "${APP_VERSION}" darwin amd64
 
       - name: Generate checksums
         working-directory: dist
-        run: shasum -a 256 v*-suna-desktop-darwin-*.dmg > desktop-macos-checksums.txt
+        run: shasum -a 256 v*-suna-wails-darwin-*.dmg > desktop-macos-checksums.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_VERSION }}-suna-desktop-darwin
+          name: ${{ env.APP_VERSION }}-suna-wails-darwin
           path: |
-            dist/v*-suna-desktop-darwin-*.dmg
+            dist/v*-suna-wails-darwin-*.dmg
             dist/desktop-macos-checksums.txt
           if-no-files-found: error

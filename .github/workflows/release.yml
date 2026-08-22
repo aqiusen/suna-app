@@ -37,6 +37,11 @@ jobs:
           check-latest: true
           cache: false
 
+      - name: Install Wails CLI
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -58,13 +63,11 @@ jobs:
           go vet ./...
           go test ./...
           go test -race ./...
-      - name: Build release artifacts
-        run: ./scripts/build-release.sh "${GITHUB_REF_NAME}"
 
       # 桌面一体包：从 Runtime 的公开 GitHub Release 取 darwin 二进制，不编译 suna 源码。
       # 钉死版本，避免 App 与 Runtime 漂到不兼容的 protocol。
       # macOS runner 自带 hdiutil/zip，用于把 Suna.app 打成 dmg。
-      - name: Build darwin desktop sidecar dmg
+      - name: Build darwin Wails dmg
         env:
           SUNA_RUNTIME_REPO: aqiusen/suna
           SUNA_RUNTIME_TAG: v0.20.1
@@ -73,24 +76,24 @@ jobs:
           for arch in arm64 amd64; do
             dest="${RUNNER_TEMP}/suna-runtime/darwin-${arch}/suna"
             bash ./scripts/fetch-suna-runtime.sh "${SUNA_RUNTIME_TAG}" darwin "${arch}" "$dest"
-            SKIP_FRONTEND_BUILD=1 SUNA_RUNTIME="$dest" bash ./scripts/build-desktop.sh "${GITHUB_REF_NAME}" darwin "${arch}"
+            SUNA_RUNTIME="$dest" bash ./scripts/build-wails-desktop.sh "${GITHUB_REF_NAME}" darwin "${arch}"
           done
 
       - name: Generate checksums
         working-directory: dist
         # macOS 无 sha256sum，用 shasum -a 256（macOS 自带）。
-        run: shasum -a 256 v* > checksums.txt
+        run: shasum -a 256 v*-suna-wails-darwin-*.dmg > checksums.txt
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            dist/v*
+            dist/v*-suna-wails-darwin-*.dmg
             dist/checksums.txt
 
   windows:
-    name: Build bundled Windows setup
+    name: Build bundled Windows Wails zip
     runs-on: windows-latest
     env:
       APP_VERSION: ${{ github.ref_name }}
@@ -119,44 +122,38 @@ jobs:
           check-latest: true
           cache: false
 
+      - name: Install Wails CLI
+        shell: bash
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
       - name: Download Windows runtime
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = "Stop"
-          $runtimeDir = Join-Path $env:RUNNER_TEMP "suna-runtime-windows-amd64"
-          $zipPath = Join-Path $env:RUNNER_TEMP "suna-runtime-windows-amd64.zip"
-          $url = "https://github.com/$env:SUNA_RUNTIME_REPO/releases/download/$env:RUNTIME_TAG/suna-windows-amd64.zip"
+          set -euo pipefail
+          dest="$PWD/.runtime/windows-amd64/suna.exe"
+          bash ./scripts/fetch-suna-runtime.sh "${RUNTIME_TAG}" windows amd64 "$dest"
+          echo "SUNA_RUNTIME=$dest" >> "$GITHUB_ENV"
+          echo "Bundling Runtime: $dest"
 
-          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-          Invoke-WebRequest -Uri $url -OutFile $zipPath
-          Expand-Archive -LiteralPath $zipPath -DestinationPath $runtimeDir -Force
-
-          $runtime = Join-Path $runtimeDir "suna.exe"
-          if (-not (Test-Path -LiteralPath $runtime)) {
-            throw "Runtime zip missing suna.exe: $url"
-          }
-          "SUNA_RUNTIME=$runtime" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Bundling Runtime: $runtime"
-
-      - name: Build Windows setup
-        shell: pwsh
-        run: .\scripts\build-desktop.ps1 -AppVersion $env:APP_VERSION -Goarch amd64
+      - name: Build Windows Wails zip
+        shell: bash
+        run: bash ./scripts/build-wails-desktop.sh "${APP_VERSION}" windows amd64
 
       - name: Generate checksums
-        shell: pwsh
+        shell: bash
         run: |
-          Get-FileHash "dist\SunaSetup-*-windows-amd64.exe", "dist\*-suna-desktop-windows-amd64.zip" -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $($_.Path)" } |
-            Set-Content -Path "dist\desktop-windows-checksums.txt"
+          cd dist
+          sha256sum v*-suna-wails-windows-amd64.zip > desktop-windows-checksums.txt
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/SunaSetup-*-windows-amd64.exe
-            dist/*-suna-desktop-windows-amd64.zip
+            dist/v*-suna-wails-windows-amd64.zip
             dist/desktop-windows-checksums.txt
