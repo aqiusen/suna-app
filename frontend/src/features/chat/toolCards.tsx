@@ -53,19 +53,14 @@ export function ToolRow({ item }: { item: ToolFlowItem }) {
     Boolean(item.params && Object.keys(item.params).length > 0) ||
     Boolean(item.result) ||
     Boolean(item.error);
-  const iconTone = {
-    running: "bg-blue-soft text-blue-strong",
-    guard: "bg-amber-soft text-amber",
-    success: "bg-green-soft text-green",
-    failed: "bg-rose/15 text-rose",
-  }[status];
+  // 图标单色无底色：Codex 式低噪音工具行，状态只由左侧圆点 + 颜色表达。
   const target = toolTarget(item);
   const duration = formatDuration(item.durationMs);
   return (
-    <article className="animate-[message-in_320ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-[10px] border border-transparent transition-colors duration-150 hover:border-line hover:bg-surface-subtle/60">
+    <article className="animate-[message-in_320ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-lg border border-transparent transition-colors duration-150 hover:border-line hover:bg-surface-subtle/60">
       <button
         aria-expanded={expanded}
-        className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2 py-[5px] text-left disabled:cursor-default"
+        className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2 py-[6px] text-left disabled:cursor-default"
         disabled={!hasDetail}
         onClick={() => setExpanded((value) => !value)}
         type="button"
@@ -74,29 +69,26 @@ export function ToolRow({ item }: { item: ToolFlowItem }) {
           aria-hidden="true"
           className={`h-[6px] w-[6px] shrink-0 rounded-full ${statusMeta.dot}`}
         />
-        <span
-          className={`grid h-[19px] w-[19px] shrink-0 place-items-center rounded-md ${iconTone}`}
-        >
-          <Icon name="tool" size={11} />
-        </span>
-        <code className="shrink-0 font-mono text-[11px] font-bold text-ink">
+        <Icon className="shrink-0 text-ink-muted" name="tool" size={13} />
+        <code className="shrink-0 font-mono text-[11.5px] font-medium text-ink">
           {item.tool}
         </code>
         {target && (
-          <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-ink-muted">
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-muted">
             {target}
           </span>
         )}
         {duration && (
-          <time className="shrink-0 font-mono text-[10px] text-ink-muted">
+          <time className="shrink-0 font-mono text-[10.5px] text-ink-muted">
             {duration}
           </time>
         )}
-        <span
-          className={`shrink-0 text-[10px] font-extrabold ${statusMeta.text}`}
-        >
-          {statusMeta.label}
-        </span>
+        {/* 状态文字仅非成功态显示：成功靠绿点即可，减少一行内的视觉元素。 */}
+        {status !== "success" && (
+          <span className={`shrink-0 text-[11px] ${statusMeta.text}`}>
+            {statusMeta.label}
+          </span>
+        )}
         {hasDetail && (
           <Icon
             name="chevron-down"
@@ -191,17 +183,17 @@ export function SkillRow({ item }: { item: SkillFlowItem }) {
     error: { dot: "bg-rose", label: t("skill.error"), text: "text-rose" },
   }[item.status];
   const iconTone = {
-    loading: "bg-blue-soft text-blue-strong",
-    reviewing: "bg-amber-soft text-amber",
-    loaded: "bg-green-soft text-green",
-    done: "bg-green-soft text-green",
-    error: "bg-rose/15 text-rose",
+    loading: "text-ink-muted",
+    reviewing: "text-ink-muted",
+    loaded: "text-ink-muted",
+    done: "text-ink-muted",
+    error: "text-rose",
   }[item.status];
   return (
-    <article className="animate-[message-in_320ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-[10px] border border-transparent transition-colors duration-150 hover:border-line hover:bg-surface-subtle/60">
+    <article className="animate-[message-in_320ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-lg border border-transparent transition-colors duration-150 hover:border-line hover:bg-surface-subtle/60">
       <button
         aria-expanded={expanded}
-        className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2 py-[5px] text-left disabled:cursor-default"
+        className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2 py-[6px] text-left disabled:cursor-default"
         disabled={!item.detail}
         onClick={() => setExpanded((value) => !value)}
         type="button"
@@ -210,19 +202,17 @@ export function SkillRow({ item }: { item: SkillFlowItem }) {
           aria-hidden="true"
           className={`h-[6px] w-[6px] shrink-0 rounded-full ${statusMeta.dot}`}
         />
-        <span
-          className={`grid h-[19px] w-[19px] shrink-0 place-items-center rounded-md ${iconTone}`}
-        >
-          <Icon name="book" size={11} />
+        <span className={`shrink-0 ${iconTone}`}>
+          <Icon name="book" size={13} />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-ink">
+        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink">
           {t("chat.skill", { name: item.name })}
         </span>
-        <span
-          className={`shrink-0 text-[10px] font-extrabold ${statusMeta.text}`}
-        >
-          {statusMeta.label}
-        </span>
+        {item.status !== "loaded" && item.status !== "done" && (
+          <span className={`shrink-0 text-[11px] ${statusMeta.text}`}>
+            {statusMeta.label}
+          </span>
+        )}
         {item.detail && (
           <Icon
             name="chevron-down"
@@ -266,16 +256,16 @@ export function SubtaskCard({ item }: { item: SubtaskFlowItem }) {
     failed: { dot: "bg-rose", label: t("subtask.failed"), text: "text-rose" },
   }[item.status];
   const iconTone = {
-    running: "bg-blue-soft text-blue-strong",
-    success: "bg-green-soft text-green",
-    failed: "bg-rose/15 text-rose",
+    running: "text-ink-muted",
+    success: "text-ink-muted",
+    failed: "text-rose",
   }[item.status];
   const toolCount = item.tools.length;
   return (
-    <article className="animate-[message-in_320ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-[10px] border border-line/80 bg-surface-solid/70 transition-colors duration-150 hover:border-line-strong">
+    <article className="animate-[message-in_320ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-lg border border-line/80 bg-surface-solid/70 transition-colors duration-150 hover:border-line-strong">
       <button
         aria-expanded={expanded}
-        className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2 py-[5px] text-left"
+        className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2 py-[6px] text-left"
         onClick={() => setExpanded((value) => !value)}
         type="button"
       >
@@ -288,22 +278,20 @@ export function SubtaskCard({ item }: { item: SubtaskFlowItem }) {
           aria-hidden="true"
           className={`h-[6px] w-[6px] shrink-0 rounded-full ${statusMeta.dot}`}
         />
-        <span
-          className={`grid h-[19px] w-[19px] shrink-0 place-items-center rounded-md ${iconTone}`}
-        >
-          <Icon name="users" size={11} />
+        <span className={`shrink-0 ${iconTone}`}>
+          <Icon name="users" size={13} />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-ink">
+        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink">
           {item.task || t("chat.subtask")}
         </span>
-        <span className="shrink-0 text-[10px] font-semibold text-ink-muted">
+        <span className="shrink-0 text-[10.5px] text-ink-muted">
           {toolCount > 0 ? t("chat.subtaskTools", { count: toolCount }) : ""}
         </span>
-        <span
-          className={`shrink-0 text-[10px] font-extrabold ${statusMeta.text}`}
-        >
-          {statusMeta.label}
-        </span>
+        {item.status !== "success" && (
+          <span className={`shrink-0 text-[11px] ${statusMeta.text}`}>
+            {statusMeta.label}
+          </span>
+        )}
       </button>
       {expanded && (
         <div className="mx-1 mb-1 grid gap-0.5 border-t border-line/60 pt-1">

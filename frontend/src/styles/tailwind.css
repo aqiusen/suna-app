@@ -139,13 +139,8 @@ body {
   min-width: 320px;
   margin: 0;
   color: var(--color-ink);
-  background:
-    radial-gradient(
-      circle at 70% 2%,
-      var(--color-canvas-glow),
-      transparent 29rem
-    ),
-    var(--color-canvas);
+  /* 纯平画布：Codex 风格靠 surface/canvas 两级底色分层，不用装饰光斑。 */
+  background: var(--color-canvas);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -380,8 +375,8 @@ button {
 @layer base {
   .markdown-body {
     color: var(--color-ink);
-    font-size: 13px;
-    line-height: 1.75;
+    font-size: 13.5px;
+    line-height: 1.72;
     letter-spacing: -0.008em;
     overflow-wrap: anywhere;
   }
@@ -865,12 +860,12 @@ button {
     }
   }
 
-  /* 输入区底部留白与安全区。 */
+  /* 输入区底部留白与安全区。纯色渐隐保留（滚动内容淡出），但更短。 */
   .composer-area {
     padding: 0 26px 21px 28px;
     background: linear-gradient(
       to top,
-      var(--color-canvas) 69%,
+      var(--color-canvas) 82%,
       color-mix(in srgb, var(--color-canvas), transparent 100%)
     );
   }

@@ -139,7 +139,7 @@ export function DecisionCard({
           {guard.suggestion ? (
             // 有修改建议：三按钮（按建议执行 = modify / 拒绝 / 批准原操作）
             <button
-              className="flex-1 cursor-pointer rounded-lg bg-[linear-gradient(135deg,#5b67f1,#6d5df0_68%,#7c54e8)] px-3 py-2 text-[12px] font-bold text-white shadow-[0_4px_10px_var(--color-blue-glow)] transition-[transform,box-shadow] duration-150 hover:shadow-[0_6px_16px_var(--color-blue-glow)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex-1 cursor-pointer rounded-lg bg-blue px-3 py-2 text-[12px] font-semibold text-white transition-colors duration-150 hover:bg-blue-strong active:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
               disabled={!guard.can_reply || controlsDisabled || busy}
               onClick={() =>
                 void reply(() => onGuardReply?.(guard.id, "modify"))

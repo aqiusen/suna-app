@@ -158,7 +158,7 @@ export function SessionSidebar({
           className="flex cursor-pointer items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-[17px] font-extrabold tracking-tight text-ink transition-colors duration-150 hover:bg-surface-subtle"
           type="button"
         >
-          <span className="grid h-[27px] w-[27px] place-items-center rounded-[9px] bg-[linear-gradient(135deg,#5b67f1,#6d5df0_68%,#7c54e8)] text-white shadow-[0_4px_11px_rgba(91,103,241,0.26)]">
+          <span className="grid h-[27px] w-[27px] place-items-center rounded-lg bg-ink text-white">
             <Icon name="sparkle" size={17} />
           </span>
           <span>Suna</span>
@@ -299,7 +299,7 @@ export function SessionSidebar({
           )}
         </button>
         <div className="flex items-center gap-2.5 px-2 py-2">
-          <span className="grid h-8 w-8 place-items-center rounded-xl bg-[linear-gradient(135deg,#5b67f1,#6d5df0_68%,#7c54e8)] text-[11px] font-extrabold text-white">
+          <span className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-subtle text-[11px] font-semibold text-ink-soft">
             SU
           </span>
           <span className="text-[12px] font-semibold text-ink-soft">

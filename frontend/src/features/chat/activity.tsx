@@ -97,11 +97,11 @@ export function StreamActivity({
   detail?: string;
 }) {
   return (
-    <span className="ml-0.5 inline-flex min-w-0 items-center gap-1.5 text-[10px] font-bold text-blue-strong">
+    <span className="ml-0.5 inline-flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-blue-strong">
       <ActivityDots />
       <span role="status">{label}</span>
       {detail && (
-        <span className="max-w-[175px] truncate text-[10px] font-semibold text-ink-muted">
+        <span className="max-w-[175px] truncate text-[11px] text-ink-muted">
           · {detail}
         </span>
       )}
@@ -130,11 +130,11 @@ export function ReasoningBlock({
         onClick={() => setExpanded((value) => !value)}
         type="button"
       >
-        <span className="grid h-[21px] w-[21px] place-items-center rounded-[7px] bg-amber-soft text-amber">
+        <span className="shrink-0 text-ink-muted">
           <Icon name="brain" size={13} />
         </span>
         <strong className="text-ink">Suna</strong>
-        <span className="ml-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-amber">
+        <span className="ml-0.5 inline-flex items-center gap-1 text-[10.5px] font-medium text-ink-muted">
           <Icon
             className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
             name="chevron-down"
@@ -149,7 +149,7 @@ export function ReasoningBlock({
         {running && !done && <StreamActivity label={t("chat.thinking")} />}
       </button>
       {expanded && (
-        <div className="markdown-body min-w-0 max-w-[650px] animate-[panel-pop_180ms_cubic-bezier(0.2,0.8,0.2,1)_both] rounded-[18px] border border-amber/20 bg-amber-soft/45 px-4 py-3 text-[13px] leading-[1.82] text-ink-soft [overflow-wrap:anywhere]">
+        <div className="markdown-body min-w-0 max-w-[650px] animate-[panel-pop_180ms_cubic-bezier(0.2,0.8,0.2,1)_both] border-l-2 border-line-strong pl-3 text-[13px] leading-[1.75] text-ink-soft [overflow-wrap:anywhere]">
           <LazyMarkdown>{text}</LazyMarkdown>
         </div>
       )}

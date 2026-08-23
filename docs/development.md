@@ -13,6 +13,13 @@ Suna App connects to an installed Runtime through its documented public client i
 
 Run the Gateway and Vite in separate terminals. The Gateway listens only on loopback at `127.0.0.1:7633`; Vite also binds to loopback and proxies browser requests for `/api` and `/healthz` to it. Gateway event updates use SSE over the `/api` routes; no additional development proxy is needed.
 
+The Gateway resolves the Runtime binary in this order:
+
+1. explicit `--suna-binary` path;
+2. bundled runtime next to the executable (`runtime/suna`, or macOS app Resources);
+3. an installed desktop app's bundled runtime (`/Applications/Suna.app/...` or `~/Applications/Suna.app/...`, macOS only) — so a dev machine with the packaged app installed needs no separate CLI install;
+4. the bare name on `PATH`.
+
 Terminal 1:
 
 ```bash
