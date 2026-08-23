@@ -28,6 +28,7 @@ export function useDeltaQueue({
     scope: undefined as Scope | undefined,
   });
   const deltaFrameRef = useRef<number | undefined>(undefined);
+  const flowIdRef = useRef(0);
 
   const resetQueuedDeltas = useCallback(() => {
     if (deltaFrameRef.current !== undefined)
@@ -54,7 +55,7 @@ export function useDeltaQueue({
     // 把到达顺序的 delta 逐段写入统一叙事流：与末尾同 kind 且未结束的段
     // 合并（继续流式累积），否则新开一段——思考→工具→回复可交替出现。
     setActive((value) => {
-      let flow = value.flow;
+      const flow = [...value.flow];
       for (const item of pending.items) {
         const last = flow[flow.length - 1];
         if (
@@ -63,20 +64,14 @@ export function useDeltaQueue({
           !last.done &&
           (last.kind === "assistant" || last.kind === "reasoning")
         ) {
-          flow = [
-            ...flow.slice(0, -1),
-            { ...last, text: last.text + item.content },
-          ];
+          flow[flow.length - 1] = { ...last, text: last.text + item.content };
         } else {
-          flow = [
-            ...flow,
-            {
-              kind: item.kind,
-              id: Date.now() + Math.random(),
-              text: item.content,
-              done: false,
-            },
-          ];
+          flow.push({
+            kind: item.kind,
+            id: ++flowIdRef.current,
+            text: item.content,
+            done: false,
+          });
         }
       }
       return { ...value, flow };

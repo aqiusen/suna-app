@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { Icon, IconButton } from "../../components/Icon";
 import { useT } from "../../lib/i18n";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import type { SessionInfo } from "../../lib/runtimeBridge";
 import { SessionRow } from "./SessionRow";
 import {
@@ -47,15 +48,7 @@ export function SessionSidebar({
 
   // 移动端（≤720px）侧栏是抽屉：未打开时对屏幕阅读器和 Tab 聚焦隐藏，
   // 避免读屏读到屏幕外的会话列表、键盘焦点落到不可见元素上。
-  const [isMobile, setIsMobile] = useState(
-    () => window.matchMedia("(max-width: 720px)").matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 720px)");
-    const onChange = () => setIsMobile(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+  const isMobile = useMediaQuery("(max-width: 720px)");
   const hidden = isMobile && !open;
 
   function toggleCollapsed(cwd: string) {
@@ -104,16 +97,21 @@ export function SessionSidebar({
   // 排序：手动置顶 > waiting 置顶（设计 §6.2）> 其余按更新时间倒序。
   const sorted = useMemo(
     () =>
-      [...sessions].sort((a, b) => {
-        const pa = pinned.has(a.id) ? 0 : 1;
-        const pb = pinned.has(b.id) ? 0 : 1;
-        if (pa !== pb) return pa - pb;
-        const rank = waitingRank[a.status] - waitingRank[b.status];
-        if (rank !== 0) return rank;
-        return (
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-        );
-      }),
+      sessions
+        .map((session) => ({
+          session,
+          updatedAt: new Date(session.updated_at).getTime(),
+        }))
+        .sort((a, b) => {
+          const pa = pinned.has(a.session.id) ? 0 : 1;
+          const pb = pinned.has(b.session.id) ? 0 : 1;
+          if (pa !== pb) return pa - pb;
+          const rank =
+            waitingRank[a.session.status] - waitingRank[b.session.status];
+          if (rank !== 0) return rank;
+          return b.updatedAt - a.updatedAt;
+        })
+        .map((item) => item.session),
     [pinned, sessions],
   );
 

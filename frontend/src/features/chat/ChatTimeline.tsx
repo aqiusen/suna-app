@@ -78,13 +78,13 @@ export function ChatTimeline({
   const t = useT();
   const [historyWindow, setHistoryWindow] = useState(80);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
-  const lastContentKeyRef = useRef("");
   const historyAnchorRef = useRef<{ height: number; top: number } | undefined>(
     undefined,
   );
+  const historyStart = Math.max(0, messages.length - historyWindow);
+  const visibleMessages = messages.slice(historyStart);
   const scrollToLatest = (behavior: ScrollBehavior = "smooth") => {
     const element = scrollRef.current;
     if (!element) return;
@@ -115,9 +115,6 @@ export function ChatTimeline({
     historyAnchorRef.current = undefined;
   }, [historyWindow]);
   useLayoutEffect(() => {
-    const key = `${sessionId ?? "none"}:${messages.length}:${flow.length}:${flow.map((s) => (s.kind === "tool" ? "t" : s.kind === "skill" ? `sk${s.item.name}:${s.item.status}` : s.kind === "subtask" ? `st${s.item.id}:${s.item.status}:${s.item.tools.length}` : `${s.kind[0]}${s.text.length}${s.done ? "d" : ""}`)).join(",")}:${running}:${pending}:${phase ?? ""}:${activeTool?.id ?? ""}:${activeTool?.status ?? ""}`;
-    if (lastContentKeyRef.current === key) return;
-    lastContentKeyRef.current = key;
     // 只在读者已经位于最新边缘时保持活跃对话锚定；浏览历史时绝不能被
     // 强制滚动离开。
     if (nearBottomRef.current) scrollToLatest("auto");
@@ -229,10 +226,10 @@ export function ChatTimeline({
           </button>
         )}
         {!loading &&
-          messages.slice(-historyWindow).map((message, index) => (
+          visibleMessages.map((message, index) => (
             <article
               className={`group mb-8 animate-[message-in_440ms_cubic-bezier(0.2,0.8,0.2,1)_both] max-[720px]:mb-7`}
-              key={`${messages.length - historyWindow + index}-${message.role}`}
+              key={`${historyStart + index}-${message.role}`}
             >
               <div
                 className={`mb-2 flex items-center gap-1.5 text-[11px] text-ink-soft ${message.role === "user" ? "flex-row-reverse" : ""}`}
@@ -441,7 +438,6 @@ export function ChatTimeline({
               ))}
             </section>
           )}
-        <div ref={endRef} />
       </section>
       {showJumpToLatest && (
         <button
