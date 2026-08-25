@@ -5,6 +5,7 @@ import { CreateSessionForm } from "./CreateSessionForm";
 
 vi.mock("../../lib/desktopGateway", () => ({
   isNativeDesktopShell: () => true,
+  resolvePastedFiles: vi.fn().mockResolvedValue([]),
   selectLocalDirectory: vi
     .fn()
     .mockResolvedValue([
@@ -60,15 +61,39 @@ describe("CreateSessionForm", () => {
     expect(onCreate).toHaveBeenCalledWith("/Users/me/demo-project", "Demo");
   });
 
-  it("会显示最近项目候选", () => {
+  it("创建时不显示最近项目标签，并保持文件夹为空", () => {
     localStorage.setItem(
       "suna-app:recent-projects",
       JSON.stringify(["/Users/me/alpha"]),
     );
 
-    renderForm({ knownCwds: ["/Users/me/beta"] });
+    renderForm();
 
-    expect(screen.getByRole("button", { name: /^alpha$/i })).toBeDefined();
-    expect(screen.getByRole("button", { name: /^beta$/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^alpha$/i })).toBeNull();
+    expect(screen.getByLabelText(/folder path/i)).toHaveProperty("value", "");
+  });
+
+  it("拖入带本机路径的文件夹后会填入路径", async () => {
+    renderForm();
+    const dropzone = screen.getByLabelText(/drop a folder here/i);
+    const file = new File([""], "demo-project");
+    Object.defineProperty(file, "path", {
+      configurable: true,
+      value: "/Users/me/demo-project",
+    });
+
+    await act(async () => {
+      fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByLabelText(/folder path/i)).toHaveProperty(
+      "value",
+      "/Users/me/demo-project",
+    );
+    expect(screen.getByLabelText(/project name/i)).toHaveProperty(
+      "value",
+      "demo-project",
+    );
   });
 });

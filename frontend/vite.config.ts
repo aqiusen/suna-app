@@ -30,6 +30,8 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
+    // Wails WebView 的 wails.localhost 会触发 macOS ATS，HMR 直接连本机 Vite。
+    hmr: { host: "127.0.0.1" },
     proxy: {
       "/api": {
         target: gatewayTarget,

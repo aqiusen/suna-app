@@ -25,7 +25,10 @@ export function bindDesktopUnloadShutdown(
   sendBeacon: (url: string) => boolean = (url) =>
     navigator.sendBeacon(url, new Blob([], { type: "text/plain" })),
 ): () => void {
-  if (!isDesktopShell()) return () => undefined;
+  // Wails 原生壳由 Go 的 OnShutdown 停 Gateway；pagehide 也会在 Vite HMR
+  // 重载时触发，不能把开发中的 Gateway 误关掉。
+  if (!new URLSearchParams(window.location.search).has("desktop"))
+    return () => undefined;
   const onHide = () => {
     try {
       sendBeacon(gatewayPath("/api/v1/shutdown"));

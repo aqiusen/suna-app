@@ -64,6 +64,21 @@ describe("requestGatewayShutdown", () => {
     });
   });
 
+  it("does not stop the Gateway during native Wails page reloads", () => {
+    const sendBeacon = vi.fn().mockReturnValue(true);
+    window.go = {
+      main: {
+        App: {
+          GatewayAuth: vi.fn(),
+        },
+      },
+    };
+    const unbind = bindDesktopUnloadShutdown(sendBeacon);
+    window.dispatchEvent(new Event("pagehide"));
+    expect(sendBeacon).not.toHaveBeenCalled();
+    unbind();
+  });
+
   it("throws when the gateway refuses", async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 403 });
     await expect(

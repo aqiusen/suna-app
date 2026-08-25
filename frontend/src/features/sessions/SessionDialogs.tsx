@@ -11,8 +11,6 @@ type SessionDialogsProps = {
   createOpen: boolean;
   onCreateOpenChange: (open: boolean) => void;
   onCreate: (cwd: string, title?: string) => Promise<void>;
-  /** 会话历史工作目录（去重），作为项目选择器候选。 */
-  knownCwds?: string[];
 };
 
 /** 会话级对话框：重命名与新建会话。 */
@@ -25,7 +23,6 @@ export function SessionDialogs({
   createOpen,
   onCreateOpenChange,
   onCreate,
-  knownCwds = [],
 }: SessionDialogsProps) {
   const t = useT();
   return (
@@ -76,7 +73,6 @@ export function SessionDialogs({
         description={t("create.folderHint")}
       >
         <CreateSessionForm
-          knownCwds={knownCwds}
           onCancel={() => onCreateOpenChange(false)}
           onCreate={onCreate}
         />

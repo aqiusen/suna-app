@@ -14,12 +14,14 @@ export function Dialog({
   onOpenChange,
   title,
   description,
+  className = "",
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: string;
+  className?: string;
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(open);
@@ -91,7 +93,7 @@ export function Dialog({
       <div
         aria-label={title}
         aria-modal="true"
-        className={`relative grid w-[min(100%,440px)] max-w-[440px] gap-3 rounded-2xl border border-line bg-surface-solid p-5 shadow-lg focus:outline-none ${panelAnimation}`}
+        className={`relative grid w-[min(100%,440px)] max-w-[440px] gap-3 rounded-2xl border border-line bg-surface-solid p-5 shadow-lg focus:outline-none ${className} ${panelAnimation}`}
         ref={panelRef}
         role="dialog"
         tabIndex={-1}

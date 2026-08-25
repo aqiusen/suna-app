@@ -1,9 +1,18 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Icon, IconButton } from "../../components/Icon";
+import { Tooltip } from "../../components/ui/Tooltip";
 import { useT } from "../../lib/i18n";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import type { SessionInfo } from "../../lib/runtimeBridge";
 import { SessionRow } from "./SessionRow";
+import { ProjectDialog } from "./ProjectDialog";
+import {
+  loadHiddenProjects,
+  loadLocalProjects,
+  saveHiddenProjects,
+  saveLocalProjects,
+  type LocalProject,
+} from "./projectStore";
 import {
   COLLAPSED_KEY,
   loadCollapsed,
@@ -39,12 +48,32 @@ export function SessionSidebar({
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [pinned, setPinned] = useState<Set<string>>(loadPinned);
+  const [localProjects, setLocalProjects] =
+    useState<Record<string, LocalProject>>(loadLocalProjects);
+  const [hiddenProjects, setHiddenProjects] =
+    useState<Set<string>>(loadHiddenProjects);
+  const [editingProjectCwd, setEditingProjectCwd] = useState<string>();
+  const [projectMenuCwd, setProjectMenuCwd] = useState<string>();
+  const projectMenuRef = useRef<HTMLDivElement>(null);
   // 每分钟刷新相对时间（"刚刚/5m 前"不会一直停留在旧值）。
   const [, tick] = useReducer((value: number) => value + 1, 0);
   useEffect(() => {
     const timer = window.setInterval(tick, 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!projectMenuCwd) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        projectMenuRef.current &&
+        !projectMenuRef.current.contains(event.target as Node)
+      )
+        setProjectMenuCwd(undefined);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [projectMenuCwd]);
 
   // 移动端（≤720px）侧栏是抽屉：未打开时对屏幕阅读器和 Tab 聚焦隐藏，
   // 避免读屏读到屏幕外的会话列表、键盘焦点落到不可见元素上。
@@ -94,10 +123,47 @@ export function SessionSidebar({
     onDelete?.(id);
   }
 
+  function openProjectEditor(cwd: string) {
+    setProjectMenuCwd(undefined);
+    setEditingProjectCwd(cwd);
+  }
+
+  function saveProject(cwd: string, name: string, sourceFolders: string[]) {
+    setLocalProjects((current) => {
+      const next = {
+        ...current,
+        [cwd]: { name, sourceFolders },
+      };
+      saveLocalProjects(next);
+      return next;
+    });
+  }
+
+  function removeProject(cwd: string) {
+    const project = localProjects[cwd];
+    if (!window.confirm(t("project.removeConfirm"))) return;
+    setLocalProjects((current) => {
+      const next = { ...current };
+      delete next[cwd];
+      saveLocalProjects(next);
+      return next;
+    });
+    setHiddenProjects((current) => {
+      const next = new Set(current);
+      next.add(cwd);
+      for (const folder of project?.sourceFolders ?? []) next.add(folder);
+      saveHiddenProjects(next);
+      return next;
+    });
+    setProjectMenuCwd(undefined);
+    setEditingProjectCwd(undefined);
+  }
+
   // 排序：手动置顶 > waiting 置顶（设计 §6.2）> 其余按更新时间倒序。
   const sorted = useMemo(
     () =>
       sessions
+        .filter((session) => !hiddenProjects.has(session.cwd))
         .map((session) => ({
           session,
           updatedAt: new Date(session.updated_at).getTime(),
@@ -112,7 +178,7 @@ export function SessionSidebar({
           return b.updatedAt - a.updatedAt;
         })
         .map((item) => item.session),
-    [pinned, sessions],
+    [hiddenProjects, pinned, sessions],
   );
 
   // 搜索：过滤标题 + 路径，搜索时平铺（临时取消分组）。
@@ -130,18 +196,25 @@ export function SessionSidebar({
   // 分组：按 cwd 聚合，组内保持 waiting 优先 + 时间倒序。
   const groups = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
+    const projectBySource = new Map<string, string>();
+    for (const [projectCwd, project] of Object.entries(localProjects)) {
+      projectBySource.set(projectCwd, projectCwd);
+      for (const sourceFolder of project.sourceFolders)
+        projectBySource.set(sourceFolder, projectCwd);
+    }
     for (const session of filtered) {
-      const list = map.get(session.cwd) ?? [];
+      const projectCwd = projectBySource.get(session.cwd) ?? session.cwd;
+      const list = map.get(projectCwd) ?? [];
       list.push(session);
-      map.set(session.cwd, list);
+      map.set(projectCwd, list);
     }
     return [...map.entries()].map(([cwd, list]) => ({
       cwd,
-      name: projectName(cwd),
+      name: localProjects[cwd]?.name || projectName(cwd),
       list,
       hasWaiting: list.some((session) => session.status === "waiting"),
     }));
-  }, [filtered]);
+  }, [filtered, localProjects]);
   const searching = Boolean(query.trim());
   const groupsWithWaiting = groups.filter((group) => group.hasWaiting);
   const groupsRest = groups.filter((group) => !group.hasWaiting);
@@ -224,38 +297,86 @@ export function SessionSidebar({
           : [...groupsWithWaiting, ...groupsRest].map((group) => {
               const isCollapsed = collapsed.has(group.cwd);
               return (
-                <div className="mb-1" key={group.cwd}>
-                  <button
-                    aria-expanded={!isCollapsed}
-                    className="flex w-full cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 hover:bg-surface-subtle"
-                    onClick={() => toggleCollapsed(group.cwd)}
-                    type="button"
-                  >
-                    <Icon
-                      className={`shrink-0 text-ink-muted transition-transform duration-150 ${isCollapsed ? "" : "rotate-90"}`}
-                      name="chevron-right"
-                      size={12}
-                    />
-                    <Icon
-                      className="shrink-0 text-ink-muted"
-                      name="folder"
-                      size={13}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-[11.5px] font-extrabold text-ink">
-                      {group.name}
-                    </span>
-                    {group.hasWaiting && (
-                      <span
-                        aria-label={t("sidebar.groupPending")}
-                        className="h-[7px] w-[7px] shrink-0 rounded-full bg-amber"
+                <div className="group/project mb-1" key={group.cwd}>
+                  <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-surface-subtle">
+                    <button
+                      aria-expanded={!isCollapsed}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                      onClick={() => toggleCollapsed(group.cwd)}
+                      type="button"
+                    >
+                      <Icon
+                        className={`shrink-0 text-ink-muted transition-transform duration-150 ${isCollapsed ? "" : "rotate-90"}`}
+                        name="chevron-right"
+                        size={12}
                       />
-                    )}
-                    <span className="shrink-0 text-[10px] font-bold text-ink-muted">
-                      {group.list.length}
-                    </span>
-                  </button>
+                      <Icon
+                        className="shrink-0 text-ink-muted"
+                        name="folder"
+                        size={13}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[11.5px] font-extrabold text-ink">
+                        {group.name}
+                      </span>
+                      {group.hasWaiting && (
+                        <span
+                          aria-label={t("sidebar.groupPending")}
+                          className="h-[7px] w-[7px] shrink-0 rounded-full bg-amber"
+                        />
+                      )}
+                      <span className="shrink-0 text-[10px] font-bold text-ink-muted">
+                        {group.list.length}
+                      </span>
+                    </button>
+                    <div
+                      className="relative flex shrink-0 items-center gap-0.5"
+                      ref={
+                        projectMenuCwd === group.cwd
+                          ? projectMenuRef
+                          : undefined
+                      }
+                    >
+                      <Tooltip label={t("project.edit")}>
+                        <button
+                          aria-label={t("project.edit")}
+                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/project:opacity-100 max-[720px]:opacity-100"
+                          onClick={() => openProjectEditor(group.cwd)}
+                          type="button"
+                        >
+                          <Icon name="pencil" size={14} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label={t("project.more")}>
+                        <button
+                          aria-expanded={projectMenuCwd === group.cwd}
+                          aria-label={t("project.more")}
+                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/project:opacity-100 max-[720px]:opacity-100"
+                          onClick={() =>
+                            setProjectMenuCwd((current) =>
+                              current === group.cwd ? undefined : group.cwd,
+                            )
+                          }
+                          type="button"
+                        >
+                          <Icon name="ellipsis" size={14} />
+                        </button>
+                      </Tooltip>
+                      {projectMenuCwd === group.cwd && (
+                        <div className="absolute top-8 right-0 z-10 w-36 overflow-hidden rounded-lg border border-line bg-surface-solid py-1 shadow-lg">
+                          <button
+                            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-rose transition-colors hover:bg-rose/10"
+                            onClick={() => removeProject(group.cwd)}
+                            type="button"
+                          >
+                            <Icon name="trash" size={14} />
+                            {t("project.remove")}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   {!isCollapsed && (
-                    <div className="pl-1">
+                    <div className="pl-4">
                       {group.list.map((session) => (
                         <SessionRow
                           disabled={disabled}
@@ -278,6 +399,27 @@ export function SessionSidebar({
               );
             })}
       </nav>
+      {editingProjectCwd && (
+        <ProjectDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditingProjectCwd(undefined);
+          }}
+          onRemove={() => removeProject(editingProjectCwd)}
+          onSave={(name, sourceFolders) =>
+            saveProject(editingProjectCwd, name, sourceFolders)
+          }
+          projectName={
+            localProjects[editingProjectCwd]?.name ||
+            projectName(editingProjectCwd)
+          }
+          sourceFolders={
+            localProjects[editingProjectCwd]?.sourceFolders ?? [
+              editingProjectCwd,
+            ]
+          }
+        />
+      )}
       <div className="mt-auto border-t border-line pt-3">
         <button
           aria-label={

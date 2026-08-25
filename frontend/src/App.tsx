@@ -192,7 +192,6 @@ function AppShell() {
         <SessionDialogs
           createOpen={createOpen}
           editingTitle={editingTitle}
-          knownCwds={sessions.map((session) => session.cwd)}
           onCreate={(cwd, title) =>
             create(cwd, title).then(() => setCreateOpen(false))
           }

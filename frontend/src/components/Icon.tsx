@@ -19,6 +19,7 @@ import {
   Paperclip,
   Pause,
   Pin,
+  Pencil,
   Plug,
   Plus,
   Search,
@@ -26,6 +27,7 @@ import {
   Shield,
   Sparkles,
   Sun,
+  Trash2,
   TriangleAlert,
   Users,
   Wrench,
@@ -54,12 +56,14 @@ export type IconName =
   | "paperclip"
   | "pause"
   | "pin"
+  | "pencil"
   | "plus"
   | "search"
   | "settings"
   | "shield"
   | "sparkle"
   | "sun"
+  | "trash"
   | "tool"
   | "users"
   | "warning"
@@ -86,12 +90,14 @@ const icons: Record<IconName, React.ComponentType<LucideProps>> = {
   paperclip: Paperclip,
   pause: Pause,
   pin: Pin,
+  pencil: Pencil,
   plus: Plus,
   search: Search,
   settings: Settings,
   shield: Shield,
   sparkle: Sparkles,
   sun: Sun,
+  trash: Trash2,
   tool: Wrench,
   users: Users,
   warning: TriangleAlert,

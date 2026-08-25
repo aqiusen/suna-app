@@ -73,6 +73,26 @@ func TestResolveSunaBinaryPrefersMacAppResources(t *testing.T) {
 	}
 }
 
+func TestResolveSunaBinaryDoesNotUseMacOSAppExecutableAsRuntime(t *testing.T) {
+	root := t.TempDir()
+	macos := filepath.Join(root, "Contents", "MacOS")
+	if err := os.MkdirAll(macos, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 在 macOS 默认文件系统上，下面的 exe 会与 MacOS/suna 命中同一路径。
+	if err := os.WriteFile(filepath.Join(macos, "Suna"), []byte("wails app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runtimePath := filepath.Join(t.TempDir(), BundledRuntimeName())
+	t.Setenv("SUNA_RUNTIME", runtimePath)
+	withInstalledAppLookup(t)
+
+	got := ResolveSunaBinary(DefaultSunaBinary, filepath.Join(macos, "Suna"))
+	if got != runtimePath {
+		t.Fatalf("ResolveSunaBinary() = %q, want SUNA_RUNTIME %q", got, runtimePath)
+	}
+}
+
 func TestResolveSunaBinaryAbsoluteFlagWins(t *testing.T) {
 	dir := t.TempDir()
 	writeFakeBinary(t, filepath.Join(dir, "runtime", BundledRuntimeName()))
@@ -81,6 +101,30 @@ func TestResolveSunaBinaryAbsoluteFlagWins(t *testing.T) {
 	got := ResolveSunaBinary(explicit, filepath.Join(dir, "suna-app"))
 	if got != explicit {
 		t.Fatalf("ResolveSunaBinary() = %q, want explicit %q", got, explicit)
+	}
+}
+
+func TestResolveSunaBinaryUsesRuntimeEnvironmentOverride(t *testing.T) {
+	runtimePath := filepath.Join(t.TempDir(), BundledRuntimeName())
+	t.Setenv("SUNA_RUNTIME", runtimePath)
+	withInstalledAppLookup(t)
+
+	got := ResolveSunaBinary(DefaultSunaBinary, filepath.Join(t.TempDir(), "suna-app"))
+	if got != runtimePath {
+		t.Fatalf("ResolveSunaBinary() = %q, want SUNA_RUNTIME %q", got, runtimePath)
+	}
+}
+
+func TestResolveSunaBinaryPrefersBundledOverRuntimeEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	bundled := filepath.Join(dir, "runtime", BundledRuntimeName())
+	envRuntime := filepath.Join(t.TempDir(), BundledRuntimeName())
+	writeFakeBinary(t, bundled)
+	t.Setenv("SUNA_RUNTIME", envRuntime)
+
+	got := ResolveSunaBinary(DefaultSunaBinary, filepath.Join(dir, "suna-app"))
+	if got != mustAbs(t, bundled) {
+		t.Fatalf("ResolveSunaBinary() = %q, want bundled %q", got, mustAbs(t, bundled))
 	}
 }
 

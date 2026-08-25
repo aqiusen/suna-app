@@ -40,6 +40,11 @@ func ResolveSunaBinary(flagValue, exePath string) string {
 			return candidate
 		}
 	}
+	// 开发模式没有正式 App Bundle，允许调用方明确指定本地构建的 Runtime。
+	// 正式包仍优先使用 exe 旁的 Resources/runtime，避免被环境变量劫持。
+	if envValue := strings.TrimSpace(os.Getenv("SUNA_RUNTIME")); envValue != "" {
+		return envValue
+	}
 	// 开发机免装：回退到本机已安装 Suna.app 的内置 Runtime。
 	for _, candidate := range installedAppLookup() {
 		if fileExists(candidate) {
@@ -51,15 +56,15 @@ func ResolveSunaBinary(flagValue, exePath string) string {
 
 func bundledCandidates(exeDir string) []string {
 	name := BundledRuntimeName()
-	var candidates []string
 	if filepath.Base(exeDir) == "MacOS" {
-		candidates = append(candidates, filepath.Join(exeDir, "..", "Resources", "runtime", name))
+		// macOS 默认大小写不敏感，Contents/MacOS/Suna 与同目录的 suna
+		// 会被视为同一个文件，不能把 Wails 壳自身误当成 Runtime。
+		return []string{filepath.Join(exeDir, "..", "Resources", "runtime", name)}
 	}
-	candidates = append(candidates,
+	return []string{
 		filepath.Join(exeDir, "runtime", name),
 		filepath.Join(exeDir, name),
-	)
-	return candidates
+	}
 }
 
 // installedAppCandidates 是 macOS 上已安装 Suna.app 的内置 Runtime 候选路径。

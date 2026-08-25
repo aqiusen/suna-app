@@ -192,6 +192,8 @@ func main() {
 			},
 		},
 		AssetServer: &assetserver.Options{
+			// Wails 开发模式要求 Assets 非空才会把页面转发到 Vite；生产模式使用自定义 Handler。
+			Assets:  webassets.Files,
 			Handler: webassets.Handler(),
 		},
 	})
