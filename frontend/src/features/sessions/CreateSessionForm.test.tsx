@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../lib/i18n";
 import { CreateSessionForm } from "./CreateSessionForm";
 
@@ -11,6 +11,26 @@ vi.mock("../../lib/desktopGateway", () => ({
       { path: "/Users/me/demo-project", name: "demo-project" },
     ]),
 }));
+
+beforeEach(() => {
+  const store = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key);
+    }),
+    clear: vi.fn(() => {
+      store.clear();
+    }),
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function renderForm(
   props: Partial<Parameters<typeof CreateSessionForm>[0]> = {},
@@ -28,12 +48,13 @@ describe("CreateSessionForm", () => {
   it("选择文件夹后会填入项目路径并提交", async () => {
     const { onCreate } = renderForm();
 
-    fireEvent.change(screen.getByLabelText(/project name/i), {
-      target: { value: "Demo" },
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/project name/i), {
+        target: { value: "Demo" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /choose folder/i }));
+      await Promise.resolve();
     });
-    fireEvent.click(screen.getByRole("button", { name: /choose folder/i }));
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
     fireEvent.click(screen.getByRole("button", { name: /create project/i }));
 
     expect(onCreate).toHaveBeenCalledWith("/Users/me/demo-project", "Demo");
@@ -47,7 +68,7 @@ describe("CreateSessionForm", () => {
 
     renderForm({ knownCwds: ["/Users/me/beta"] });
 
-    expect(screen.getByRole("button", { name: /alpha/i })).toBeDefined();
-    expect(screen.getByRole("button", { name: /beta/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^alpha$/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^beta$/i })).toBeDefined();
   });
 });

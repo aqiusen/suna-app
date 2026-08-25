@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../lib/i18n";
 import { Composer } from "./Composer";
@@ -33,7 +33,10 @@ describe("Composer 乐观清空状态机", () => {
     onSubmit.mockResolvedValue(undefined);
 
     const textarea = type("hello");
-    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+      await Promise.resolve();
+    });
 
     expect(onSubmit).toHaveBeenCalledWith([{ type: "text", text: "hello" }]);
     // 发送瞬间草稿已清空（乐观清空）。
@@ -45,10 +48,11 @@ describe("Composer 乐观清空状态机", () => {
     onSubmit.mockRejectedValue(new Error("boom"));
 
     const textarea = type("keep me");
-    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+      await Promise.resolve();
+    });
 
-    // 等失败处理完成（microtask）后草稿恢复。
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(textarea).toHaveProperty("value", "keep me");
   });
 
@@ -58,22 +62,28 @@ describe("Composer 乐观清空状态机", () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("Enter 发送（非 Shift）", () => {
+  it("Enter 发送（非 Shift）", async () => {
     const { onSubmit } = renderComposer();
     onSubmit.mockResolvedValue(undefined);
 
     const textarea = type("enter send");
-    fireEvent.keyDown(textarea, { key: "Enter" });
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: "Enter" });
+      await Promise.resolve();
+    });
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it("Shift+Enter 不发送（换行）", () => {
+  it("Shift+Enter 不发送（换行）", async () => {
     const { onSubmit } = renderComposer();
     onSubmit.mockResolvedValue(undefined);
 
     const textarea = type("shift enter");
-    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+      await Promise.resolve();
+    });
 
     expect(onSubmit).not.toHaveBeenCalled();
   });
