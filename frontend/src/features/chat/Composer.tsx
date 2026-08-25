@@ -404,8 +404,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               <ComposerAttachmentMenu
                 canAttachImageUrl={canAttachImageUrl}
                 disabled={disabled || sending}
-                onAttachFiles={nativeShell ? pickLocalFiles : undefined}
-                onAttachFolder={nativeShell ? pickLocalDirectory : undefined}
+                canAttachFiles={nativeShell}
+                canAttachFolder={nativeShell}
+                onAttachFiles={pickLocalFiles}
+                onAttachFolder={pickLocalDirectory}
                 onToggleImageUrl={
                   canAttachImageUrl
                     ? () => setShowImageInput((value) => !value)

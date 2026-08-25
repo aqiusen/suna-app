@@ -3,6 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../lib/i18n";
 import { Composer } from "./Composer";
 
+vi.mock("../../lib/desktopGateway", () => ({
+  isNativeDesktopShell: () => true,
+  resolvePastedFiles: vi.fn().mockResolvedValue([]),
+  selectLocalDirectory: vi.fn().mockResolvedValue([]),
+  selectLocalFiles: vi.fn().mockResolvedValue([]),
+}));
+
 /** 包裹 LocaleProvider：组件内部 useT() 需要 context。 */
 function renderComposer(props: Partial<Parameters<typeof Composer>[0]> = {}) {
   const onSubmit = vi.fn<() => Promise<void>>();
@@ -132,9 +139,11 @@ describe("Composer + 附件面板", () => {
       name: /add attachments/i,
     });
     fireEvent.click(plusButton);
-    // dropdown 展开后仅含 1 个 Image URL 菜单项。
-    const buttons = screen.getAllByRole("button", { name: /image url/i });
-    expect(buttons.length).toBe(1);
+    expect(screen.getByRole("button", { name: /attach files/i })).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: /attach folder/i }),
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: /image url/i })).toBeDefined();
   });
 
   it("+ 按钮再次点击收起附件 dropdown", () => {

@@ -672,6 +672,20 @@ const DICT: Dict = {
     en: "Failed to create session.",
   },
   "create.project": { zh: "项目", en: "Project" },
+  "create.createProject": { zh: "创建项目", en: "Create project" },
+  "create.submitProject": { zh: "创建项目", en: "Create project" },
+  "create.projectName": { zh: "项目名称", en: "Project name" },
+  "create.projectNamePlaceholder": {
+    zh: "未命名项目",
+    en: "Untitled project",
+  },
+  "create.sourceFolder": { zh: "源文件夹", en: "Source folder" },
+  "create.pickFolder": { zh: "选择文件夹", en: "Choose folder" },
+  "create.folderEmpty": { zh: "尚未选择文件夹", en: "No folder selected" },
+  "create.folderHint": {
+    zh: "选择一个文件夹，Suna 将在这里读写文件。",
+    en: "Choose a folder Suna can read and edit.",
+  },
   "create.searchPlaceholder": {
     zh: "搜索或输入路径…",
     en: "Search or enter a path…",

@@ -72,8 +72,8 @@ export function SessionDialogs({
       <Dialog
         open={createOpen}
         onOpenChange={onCreateOpenChange}
-        title={t("create.createTask")}
-        description={t("create.desc")}
+        title={t("create.createProject")}
+        description={t("create.folderHint")}
       >
         <CreateSessionForm
           knownCwds={knownCwds}

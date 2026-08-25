@@ -51,6 +51,10 @@ export function isNativeDesktopShell(): boolean {
   return typeof window.go?.main?.App?.GatewayAuth === "function";
 }
 
+export function hasNativeFileDialogs(): boolean {
+  return Boolean(appBinding()?.SelectFiles || appBinding()?.SelectDirectory);
+}
+
 /** 桌面壳原生文件选择结果。 */
 export type PickedFile = {
   path: string;

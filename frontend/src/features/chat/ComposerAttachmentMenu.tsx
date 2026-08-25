@@ -5,8 +5,10 @@ import { useT } from "../../lib/i18n";
 type ComposerAttachmentMenuProps = {
   /** 桌面壳：选择文件。 */
   onAttachFiles?: () => void;
+  canAttachFiles?: boolean;
   /** 桌面壳：选择文件夹。 */
   onAttachFolder?: () => void;
+  canAttachFolder?: boolean;
   /** 图片 URL 输入开关。 */
   onToggleImageUrl?: () => void;
   showImageUrl?: boolean;
@@ -16,7 +18,9 @@ type ComposerAttachmentMenuProps = {
 
 export function ComposerAttachmentMenu({
   onAttachFiles,
+  canAttachFiles = false,
   onAttachFolder,
+  canAttachFolder = false,
   onToggleImageUrl,
   showImageUrl,
   canAttachImageUrl,
@@ -54,7 +58,7 @@ export function ComposerAttachmentMenu({
   }, [open, close]);
 
   const hasAttachments = Boolean(
-    onAttachFiles || onAttachFolder || canAttachImageUrl,
+    canAttachFiles || canAttachFolder || canAttachImageUrl,
   );
 
   if (!hasAttachments) return null;
@@ -84,7 +88,7 @@ export function ComposerAttachmentMenu({
           {onAttachFiles && (
             <button
               className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-[12px] font-semibold text-ink-soft transition-colors duration-100 hover:bg-surface-subtle hover:text-ink"
-              disabled={disabled}
+              disabled={disabled || !canAttachFiles}
               onClick={() => {
                 onAttachFiles();
                 close();
@@ -98,7 +102,7 @@ export function ComposerAttachmentMenu({
           {onAttachFolder && (
             <button
               className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-[12px] font-semibold text-ink-soft transition-colors duration-100 hover:bg-surface-subtle hover:text-ink"
-              disabled={disabled}
+              disabled={disabled || !canAttachFolder}
               onClick={() => {
                 onAttachFolder();
                 close();
