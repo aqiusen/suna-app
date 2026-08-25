@@ -13,12 +13,10 @@ function renderHeader(
       <TooltipProvider>
         <SessionHeader
           canControl
-          detailsOpen={false}
           handoffRole="host"
           onOpenMobileMenu={() => undefined}
           onOpenSettings={() => undefined}
           onStop={onStop}
-          onToggleDetails={() => undefined}
           onToggleTheme={() => undefined}
           resolvedTheme="light"
           running

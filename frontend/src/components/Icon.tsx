@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Moon,
   PanelRight,
+  Paperclip,
   Pause,
   Pin,
   Plug,
@@ -50,6 +51,7 @@ export type IconName =
   | "message"
   | "moon"
   | "panel"
+  | "paperclip"
   | "pause"
   | "pin"
   | "plus"
@@ -81,6 +83,7 @@ const icons: Record<IconName, React.ComponentType<LucideProps>> = {
   message: MessageSquare,
   moon: Moon,
   panel: PanelRight,
+  paperclip: Paperclip,
   pause: Pause,
   pin: Pin,
   plus: Plus,

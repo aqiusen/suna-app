@@ -42,6 +42,12 @@ cd gateway
 go run ./cmd/suna-app
 ```
 
+Or use the repo helper:
+
+```bash
+./scripts/dev-gateway.sh
+```
+
 ```bash
 # Terminal 2
 cd frontend

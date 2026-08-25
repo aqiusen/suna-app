@@ -8,14 +8,12 @@ type SessionHeaderProps = {
   selected?: SessionInfo;
   handoffRole: "host" | "guest";
   resolvedTheme: "light" | "dark";
-  detailsOpen: boolean;
   running: boolean;
   canControl: boolean;
   syncing: boolean;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onStop: () => void;
-  onToggleDetails: () => void;
   onOpenMobileMenu: () => void;
 };
 
@@ -24,14 +22,12 @@ export function SessionHeader({
   selected,
   handoffRole,
   resolvedTheme,
-  detailsOpen,
   running,
   canControl,
   syncing,
   onToggleTheme,
   onOpenSettings,
   onStop,
-  onToggleDetails,
   onOpenMobileMenu,
 }: SessionHeaderProps) {
   const t = useT();
@@ -147,23 +143,6 @@ export function SessionHeader({
             </span>
           </button>
         )}
-        <Tooltip
-          label={
-            detailsOpen ? t("header.closeDetails") : t("header.toggleDetails")
-          }
-        >
-          <IconButton
-            ariaControls="run-details"
-            ariaExpanded={detailsOpen}
-            className="aria-expanded:false:bg-blue-soft aria-expanded:false:text-blue-strong"
-            label={
-              detailsOpen ? t("header.closeDetails") : t("header.toggleDetails")
-            }
-            onClick={onToggleDetails}
-          >
-            <Icon name="panel" />
-          </IconButton>
-        </Tooltip>
       </div>
     </header>
   );

@@ -3,6 +3,20 @@ type WailsAppBinding = {
     base_url?: string;
     desktop_token?: string;
   }>;
+  /** 原生多选文件对话框，返回本机绝对路径（仅桌面壳存在）。 */
+  SelectFiles?: () => Promise<
+    { path: string; name: string; mime_type?: string; size?: number }[]
+  >;
+  /** 原生文件夹选择对话框。 */
+  SelectDirectory?: () => Promise<
+    { path: string; name: string; mime_type?: string; size?: number }[]
+  >;
+  /** 把粘贴事件里的 file:// URL 解析为本机路径。 */
+  ResolvePastedFiles?: (
+    fileURLs: string[],
+  ) => Promise<
+    { path: string; name: string; mime_type?: string; size?: number }[]
+  >;
 };
 
 declare global {
@@ -35,6 +49,37 @@ export function gatewayPath(path: string): string {
 
 export function isNativeDesktopShell(): boolean {
   return typeof window.go?.main?.App?.GatewayAuth === "function";
+}
+
+/** 桌面壳原生文件选择结果。 */
+export type PickedFile = {
+  path: string;
+  name: string;
+  mime_type?: string;
+  size?: number;
+};
+
+const appBinding = () => window.go?.main?.App;
+
+/** 打开系统多选文件对话框（仅桌面壳）。 */
+export async function selectLocalFiles(): Promise<PickedFile[]> {
+  const files = await appBinding()?.SelectFiles?.();
+  return Array.isArray(files) ? files : [];
+}
+
+/** 打开系统文件夹选择对话框（仅桌面壳）。 */
+export async function selectLocalDirectory(): Promise<PickedFile[]> {
+  const files = await appBinding()?.SelectDirectory?.();
+  return Array.isArray(files) ? files : [];
+}
+
+/** 把粘贴/拖拽事件里的 file:// URL 解析为本机路径（仅桌面壳）。 */
+export async function resolvePastedFiles(
+  fileURLs: string[],
+): Promise<PickedFile[]> {
+  if (fileURLs.length === 0) return [];
+  const files = await appBinding()?.ResolvePastedFiles?.(fileURLs);
+  return Array.isArray(files) ? files : [];
 }
 
 export async function configureGatewayBaseUrl(): Promise<void> {

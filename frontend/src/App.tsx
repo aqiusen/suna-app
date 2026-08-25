@@ -8,7 +8,6 @@ import { SessionStatusBars } from "./features/sessions/SessionStatusBars";
 import { SessionDialogs } from "./features/sessions/SessionDialogs";
 import { TaskOverview } from "./features/overview/TaskOverview";
 import {
-  useDetailsOpen,
   useGlobalShortcuts,
   useHashRouting,
   useTheme,
@@ -20,7 +19,6 @@ import {
 } from "./features/app/AppChrome";
 import {
   CommandPaletteOverlay,
-  RunDetailsOverlay,
   RuntimeSettingsOverlay,
 } from "./features/app/AppOverlays";
 import { LocaleProvider, useT } from "./lib/i18n";
@@ -41,10 +39,6 @@ function AppShell() {
   const isMobile = useMediaQuery("(max-width: 720px)");
   const { theme, setTheme, resolvedTheme, toggleTheme } = useTheme();
 
-  // 纯 UI 状态：面板开关与表单草稿。
-  // 桌面默认打开右栏；移动端详情是底部 Sheet，默认关闭避免打开即弹层，
-  // 缩小到移动端时也自动关闭（避免残留弹出）。
-  const [detailsOpen, setDetailsOpen] = useDetailsOpen(isMobile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   /** 移动端底部导航：总览 / 任务（工作台）/ 设置。 */
   const [mobileTab, setMobileTab] = useState<
@@ -83,7 +77,6 @@ function AppShell() {
     selected,
     active,
     messages,
-    usage,
     config,
     setConfig,
     syncing,
@@ -145,9 +138,7 @@ function AppShell() {
     );
 
   return (
-    <main
-      className={`animate-[message-in_420ms_cubic-bezier(0.2,0.8,0.2,1)_both] app-shell ${detailsOpen ? "" : "details-closed"}`}
-    >
+    <main className="animate-[message-in_420ms_cubic-bezier(0.2,0.8,0.2,1)_both] app-shell details-closed">
       <SessionSidebar
         connected={connected}
         onCreate={create}
@@ -186,14 +177,12 @@ function AppShell() {
       <section className="workspace">
         <SessionHeader
           canControl={canControl}
-          detailsOpen={detailsOpen}
           handoffRole={handoffRole}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           onOpenSettings={() => setSettingsOpen((value) => !value)}
           onStop={() =>
             void queueSessionOperation(() => rpc("agent.cancel", {}))
           }
-          onToggleDetails={() => setDetailsOpen(!detailsOpen)}
           onToggleTheme={toggleTheme}
           resolvedTheme={resolvedTheme}
           running={running}
@@ -305,8 +294,43 @@ function AppShell() {
               toolSummary={active.toolSummary}
             />
             <Composer
+              activeModel={
+                selected?.model_ref ??
+                active.snapshot?.session.model_ref ??
+                config?.active_model
+              }
+              approvalMode={config?.guard_mode}
               canAttachImageUrl={Boolean(hello?.content_sources.image_url)}
               disabled={sessionActionsFrozen || observer}
+              models={config?.models}
+              onApprovalModeChange={
+                canConfig && !sessionActionsFrozen
+                  ? (mode) =>
+                      rpc("config.set", {
+                        action: "update_general",
+                        guard_mode: mode,
+                      }).then(() =>
+                        // 保存成功后刷新本地 config 快照。
+                        rpc("config.get", {}).then(setConfig),
+                      )
+                  : undefined
+              }
+              onModelChange={
+                canConfig && !sessionActionsFrozen && !observer
+                  ? (modelRef) => void updateModel(modelRef)
+                  : undefined
+              }
+              onReasoningChange={
+                canConfig && !sessionActionsFrozen && !observer
+                  ? (model) =>
+                      rpc("config.set", {
+                        action: "upsert_model",
+                        model,
+                      }).then((next) => {
+                        setConfig(next);
+                      })
+                  : undefined
+              }
               onSubmit={send}
               observer={observer}
               ref={composerRef}
@@ -324,42 +348,6 @@ function AppShell() {
         onSelectOverview={() => setMobileTab("overview")}
         onSelectSession={() => setMobileTab("session")}
         selected={selected}
-      />
-      <RunDetailsOverlay
-        ask={active.ask}
-        canConfigure={canConfig && !sessionActionsFrozen}
-        compact={active.compact}
-        controlsDisabled={syncing || (running && !canControl)}
-        config={config}
-        guard={active.guard}
-        modelRef={
-          selected?.model_ref ??
-          active.snapshot?.session.model_ref ??
-          config?.active_model
-        }
-        onClose={() => setDetailsOpen(false)}
-        onCompact={() =>
-          sessionActionsFrozen
-            ? Promise.resolve()
-            : queueSessionOperation(() => rpc("session.compact", {})).then(
-                () => undefined,
-              )
-        }
-        onResume={
-          active.run?.resume_available && canControl && !sessionActionsFrozen
-            ? () =>
-                queueSessionOperation(() => rpc("agent.resumeRun", {})).then(
-                  () => undefined,
-                )
-            : undefined
-        }
-        onUpdateModel={updateModel}
-        open={detailsOpen}
-        phase={active.run?.phase ?? current?.phase}
-        run={active.run}
-        status={current?.status ?? selected?.status}
-        totals={usage}
-        usage={active.usage}
       />
       <CommandPaletteOverlay
         canCompact={
@@ -387,7 +375,6 @@ function AppShell() {
             () => undefined,
           )
         }
-        onToggleDetails={() => setDetailsOpen((value) => !value)}
         onToggleTheme={toggleTheme}
         open={commandOpen}
         running={running}

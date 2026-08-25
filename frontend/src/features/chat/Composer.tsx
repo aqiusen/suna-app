@@ -7,7 +7,18 @@ import {
 } from "react";
 import { Icon } from "../../components/Icon";
 import { useT } from "../../lib/i18n";
-import type { MessagePart } from "../../lib/runtimeBridge";
+import type { MessagePart } from "../../lib/runtimeTypes";
+import {
+  isNativeDesktopShell,
+  resolvePastedFiles,
+  selectLocalDirectory,
+  selectLocalFiles,
+  type PickedFile,
+} from "../../lib/desktopGateway";
+import type { ConfigModel } from "../../lib/runtimeTypes";
+import { ComposerApprovalMode } from "./ComposerApprovalMode";
+import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
+import { ComposerModelSelect } from "./ComposerModelSelect";
 
 type ComposerProps = {
   onSubmit: (parts: MessagePart[]) => Promise<void>;
@@ -17,7 +28,27 @@ type ComposerProps = {
   canAttachImageUrl?: boolean;
   /** Increment to request focus on the composer textarea. */
   focusTrigger?: number;
+  /** 可用模型列表（来自 config.get）。 */
+  models?: ConfigModel[];
+  /** 当前会话或全局活跃模型引用。 */
+  activeModel?: string;
+  /** 切换模型。 */
+  onModelChange?: (modelRef: string) => void;
+  /** 保存当前模型的推理强度配置。 */
+  onReasoningChange?: (model: ConfigModel) => Promise<void>;
+  /** 当前 guard_mode 值。 */
+  approvalMode?: string;
+  /** 保存批准方式。 */
+  onApprovalModeChange?: (mode: string) => Promise<void>;
 };
+
+// Wails WebView 粘贴文件时 File 对象带非标准 path 属性（本机绝对路径）。
+// DOM 类型不包含它，这里做一次窄化声明；仅桌面壳场景有值。
+declare global {
+  interface File {
+    path?: string;
+  }
+}
 
 export type ComposerHandle = {
   /** 外部（如空状态建议卡）向输入框填充草稿并聚焦。 */
@@ -33,6 +64,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       observer = false,
       canAttachImageUrl,
       focusTrigger = 0,
+      models,
+      activeModel,
+      onModelChange,
+      approvalMode,
+      onApprovalModeChange,
+      onReasoningChange,
     },
     ref,
   ) {
@@ -40,10 +77,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [draft, setDraft] = useState("");
     const [imageUrl, setImageUrl] = useState("");
     const [imageUrls, setImageUrls] = useState<string[]>([]);
+    // 桌面壳的本机文件附件（path kind）：原生对话框选择或粘贴 file:// 解析。
+    const [localFiles, setLocalFiles] = useState<PickedFile[]>([]);
     const [showImageInput, setShowImageInput] = useState(false);
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string>();
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    // 桌面壳才提供原生文件选择/粘贴路径解析能力。
+    const nativeShell = isNativeDesktopShell();
 
     useEffect(() => {
       // 发送后清空草稿时，把自动增高的高度恢复为初始值。
@@ -90,9 +131,62 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       setImageUrl("");
     }
 
+    /** 添加本机文件附件（按绝对路径去重）。 */
+    function addLocalFiles(files: PickedFile[]) {
+      if (files.length === 0) return;
+      setLocalFiles((value) => {
+        const seen = new Set(value.map((item) => item.path));
+        return [...value, ...files.filter((item) => !seen.has(item.path))];
+      });
+      setError(undefined);
+    }
+
+    async function pickLocalFiles() {
+      try {
+        addLocalFiles(await selectLocalFiles());
+      } catch {
+        setError(t("chat.sendError"));
+      }
+    }
+
+    async function pickLocalDirectory() {
+      try {
+        addLocalFiles(await selectLocalDirectory());
+      } catch {
+        setError(t("chat.sendError"));
+      }
+    }
+
+    // 粘贴处理：桌面壳下 Finder 复制的文件以 file:// 形式出现在剪贴板，
+    // 交给 Go 侧解析为本机路径；普通文本/图片 URL 粘贴不受影响。
+    async function handlePaste(event: React.ClipboardEvent) {
+      if (!nativeShell || disabled || sending) return;
+      const urls = Array.from(event.clipboardData.items)
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null)
+        .filter((file) => file.size === 0 && !file.type)
+        .map((file) => file.path)
+        .filter((path): path is string => typeof path === "string");
+      if (urls.length > 0) {
+        event.preventDefault();
+        try {
+          addLocalFiles(await resolvePastedFiles(urls));
+        } catch {
+          setError(t("chat.sendError"));
+        }
+      }
+    }
+
     async function submit() {
       const message = draft.trim();
-      if ((!message && imageUrls.length === 0) || sending || disabled) return;
+      if (
+        (!message && imageUrls.length === 0 && localFiles.length === 0) ||
+        sending ||
+        disabled
+      ) {
+        return;
+      }
       if (imageUrl.trim()) {
         // 输入框有未添加的 URL：先校验再视为待提交附件。
         if (!validateUrl(imageUrl.trim())) {
@@ -110,14 +204,29 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       for (const url of urls) {
         parts.push({ type: "image", source: { kind: "url", url } });
       }
+      // 本机文件以 path kind 引用：Runtime 与 Gateway 同机可直接读取。
+      for (const file of localFiles) {
+        parts.push({
+          type: "image",
+          source: {
+            kind: "path",
+            path: file.path,
+            name: file.name,
+            mime_type: file.mime_type,
+            size: file.size,
+          },
+        });
+      }
       // 乐观清空：立即清空输入（发送按钮进入 sending 态），失败时恢复草稿，
       // 避免网络慢时用户误以为没发出而重复提交。
       const prevDraft = draft;
       const prevUrls = imageUrls;
       const prevImageUrl = imageUrl;
+      const prevLocalFiles = localFiles;
       setDraft("");
       setImageUrls([]);
       setImageUrl("");
+      setLocalFiles([]);
       setShowImageInput(false);
       try {
         await onSubmit(parts);
@@ -125,6 +234,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         setDraft(prevDraft);
         setImageUrls(prevUrls);
         setImageUrl(prevImageUrl);
+        setLocalFiles(prevLocalFiles);
         setError(
           reason instanceof Error ? reason.message : t("chat.sendError"),
         );
@@ -135,6 +245,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
 
     return (
       <footer className="composer-area">
+        {/* 状态提示行 */}
         {(waiting || error) && (
           <div className="mx-auto mb-2 flex w-[min(720px,100%)] items-center justify-between">
             {waiting && (
@@ -153,7 +264,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           </div>
         )}
         <div
-          className={`mx-auto w-[min(720px,100%)] rounded-[14px] border bg-surface-solid px-4 pt-3 pb-2.5 transition-colors duration-150 max-[720px]:rounded-xl max-[720px]:px-3 max-[720px]:pt-2.5 max-[720px]:pb-2 ${observer ? "border-dashed border-rose/30 bg-surface-subtle/70 opacity-75" : "border-line-strong focus-within:border-blue/50"}`}
+          className={`mx-auto w-[min(720px,100%)] rounded-[16px] border bg-surface-solid px-3.5 pt-3 pb-2.5 transition-colors duration-150 max-[720px]:rounded-xl max-[720px]:px-3 max-[720px]:pt-2.5 max-[720px]:pb-2 ${observer ? "border-dashed border-rose/30 bg-surface-subtle/70 opacity-75" : "border-line-strong focus-within:border-blue/50"}`}
         >
           {observer && (
             <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[10.5px] font-semibold text-rose/80">
@@ -161,6 +272,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               {t("chat.observerNotice")}
             </div>
           )}
+          {/* 图片 URL 输入框 */}
           {showImageInput && (
             <div className="mb-2 grid gap-1.5 px-0.5">
               <label className="grid gap-1 text-[10px] font-bold text-ink-muted">
@@ -195,7 +307,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   </button>
                 </span>
               </label>
-              {/* 已添加的图片附件 chips：可逐个删除（多图支持，设计 §7.5） */}
+              {/* 已添加的图片附件 chips */}
               {imageUrls.length > 0 && (
                 <span className="flex flex-wrap gap-1.5">
                   {imageUrls.map((url) => (
@@ -223,75 +335,119 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               )}
             </div>
           )}
-          <div className="flex items-end gap-1.5">
-            <textarea
-              aria-label={t("chat.inputLabel")}
-              className="min-h-[38px] max-h-[132px] flex-1 resize-none bg-transparent px-1 py-[9px] text-[13px] leading-[20px] text-ink outline-none placeholder:text-ink-muted max-[720px]:min-h-[44px] max-[720px]:py-[11px]"
-              disabled={disabled || sending}
-              onChange={(event) => setDraft(event.target.value)}
-              onInput={(event) => {
-                // 随内容自动增高，最多 132px（与 CSS max-height 一致）；超出后内部滚动。
-                const element = event.currentTarget;
-                element.style.height = "auto";
-                element.style.height = `${Math.min(element.scrollHeight, 132)}px`;
-              }}
-              onKeyDown={(event) => {
-                // isComposing：中文输入法组合输入中的回车用于选词，不能发送。
-                // Cmd/Ctrl+Enter 强制发送（组合键下忽略 Shift，防止 IME 占用场景）；
-                // 普通 Enter 非 Shift 发送，Shift+Enter 换行。
-                const mod = event.metaKey || event.ctrlKey;
-                if (
-                  event.key === "Enter" &&
-                  !event.nativeEvent.isComposing &&
-                  (mod || !event.shiftKey)
-                ) {
-                  event.preventDefault();
-                  void submit();
-                }
-              }}
-              placeholder={
-                disabled
-                  ? observer
-                    ? t("chat.observerPlaceholder")
-                    : t("chat.selectSessionFirst")
-                  : t("chat.sendPlaceholder")
-              }
-              ref={textareaRef}
-              rows={1}
-              value={draft}
-            />
-            <div className="flex shrink-0 items-center gap-1.5 pb-1.5">
-              {canAttachImageUrl && (
-                <button
-                  aria-expanded={showImageInput}
-                  aria-label={t("chat.imageUrl")}
-                  className={`grid h-[34px] w-[34px] cursor-pointer place-items-center rounded-[11px] transition-colors duration-150 ${showImageInput ? "bg-blue-soft text-blue-strong" : "text-ink-muted hover:bg-surface-subtle hover:text-ink"}`}
-                  disabled={disabled || sending}
-                  onClick={() => setShowImageInput((value) => !value)}
-                  type="button"
+          {/* 本机文件附件 chips */}
+          {localFiles.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5 px-0.5">
+              {localFiles.map((file) => (
+                <span
+                  className="inline-flex max-w-full items-center gap-1 rounded-lg border border-line bg-surface-subtle py-0.5 pr-1 pl-2 text-[11px] font-medium text-ink-soft"
+                  key={file.path}
+                  title={file.path}
                 >
-                  <Icon name="image" size={16} />
-                </button>
-              )}
+                  <Icon aria-hidden="true" name="tool" size={12} />
+                  <span className="max-w-[220px] truncate">{file.name}</span>
+                  <button
+                    aria-label={t("chat.removePath", { path: file.name })}
+                    className="grid h-4 w-4 shrink-0 cursor-pointer place-items-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-surface-raised hover:text-ink"
+                    disabled={disabled || sending}
+                    onClick={() =>
+                      setLocalFiles((value) =>
+                        value.filter((item) => item.path !== file.path),
+                      )
+                    }
+                    type="button"
+                  >
+                    <Icon name="close" size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {/* 文字输入区 */}
+          <textarea
+            aria-label={t("chat.inputLabel")}
+            className="min-h-[42px] max-h-[132px] w-full resize-none bg-transparent px-1 py-1 text-[13.5px] leading-[21px] text-ink outline-none placeholder:text-ink-muted max-[720px]:min-h-[44px] max-[720px]:py-[11px]"
+            disabled={disabled || sending}
+            onChange={(event) => setDraft(event.target.value)}
+            onInput={(event) => {
+              const element = event.currentTarget;
+              element.style.height = "auto";
+              element.style.height = `${Math.min(element.scrollHeight, 132)}px`;
+            }}
+            onKeyDown={(event) => {
+              const mod = event.metaKey || event.ctrlKey;
+              if (
+                event.key === "Enter" &&
+                !event.nativeEvent.isComposing &&
+                (mod || !event.shiftKey)
+              ) {
+                event.preventDefault();
+                void submit();
+              }
+            }}
+            onPaste={(event) => void handlePaste(event)}
+            placeholder={
+              disabled
+                ? observer
+                  ? t("chat.observerPlaceholder")
+                  : t("chat.selectSessionFirst")
+                : t("chat.sendPlaceholder")
+            }
+            ref={textareaRef}
+            rows={1}
+            value={draft}
+          />
+          {/* 底部工具栏 */}
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            {/* 左区：+ 附件菜单 / 批准方式 / 模型选择 */}
+            <div className="flex items-center gap-1.5">
+              <ComposerAttachmentMenu
+                canAttachImageUrl={canAttachImageUrl}
+                disabled={disabled || sending}
+                onAttachFiles={nativeShell ? pickLocalFiles : undefined}
+                onAttachFolder={nativeShell ? pickLocalDirectory : undefined}
+                onToggleImageUrl={
+                  canAttachImageUrl
+                    ? () => setShowImageInput((value) => !value)
+                    : undefined
+                }
+                showImageUrl={showImageInput}
+              />
+              <ComposerApprovalMode
+                disabled={disabled || sending || observer}
+                onSave={onApprovalModeChange}
+                value={approvalMode}
+              />
+            </div>
+            {/* 右区：模型选择 / 发送按钮 */}
+            <div className="flex shrink-0 items-center gap-1.5">
+              <ComposerModelSelect
+                activeModelRef={activeModel}
+                disabled={disabled || sending || observer}
+                models={models}
+                onModelChange={onModelChange}
+                onReasoningChange={onReasoningChange}
+              />
               <button
                 aria-label={t("chat.send")}
-                className="grid h-[34px] w-[34px] cursor-pointer place-items-center rounded-[10px] bg-ink text-white transition-[background-color,opacity] duration-150 hover:bg-blue active:opacity-85 disabled:cursor-default disabled:opacity-40 max-[720px]:h-[42px] max-[720px]:w-[42px]"
+                className="grid h-8 w-8 cursor-pointer place-items-center rounded-full bg-ink text-white transition-[background-color,opacity] duration-150 hover:bg-blue active:opacity-85 disabled:cursor-default disabled:opacity-40 max-[720px]:h-[42px] max-[720px]:w-[42px]"
                 disabled={
                   (!draft.trim() &&
                     !imageUrl.trim() &&
-                    imageUrls.length === 0) ||
+                    imageUrls.length === 0 &&
+                    localFiles.length === 0) ||
                   disabled ||
                   sending
                 }
                 onClick={() => void submit()}
                 type="button"
               >
-                <Icon name="arrow-up" size={17} />
+                <Icon name="arrow-up" size={16} />
               </button>
             </div>
           </div>
         </div>
-        {/* 提示行仅桌面显示（窄屏空间有限且用户熟悉触屏输入）。 */}
+        {/* 提示行仅桌面显示 */}
         <p className="mx-auto mt-1.5 w-[min(720px,100%)] text-center text-[11px] text-ink-muted/80 max-[720px]:hidden">
           {t("chat.composerHint")}
         </p>

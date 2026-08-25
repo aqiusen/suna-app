@@ -71,3 +71,80 @@ describe("Composer 乐观清空状态机", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 });
+
+describe("Composer 模型选择器", () => {
+  it("传入模型列表时渲染选择器", () => {
+    renderComposer({
+      models: [
+        { provider: "openai", protocol: "openai_chat", model: "gpt-4o" },
+      ],
+      activeModel: "openai/gpt-4o",
+      onModelChange: vi.fn(),
+    });
+    // 模型选择器 trigger 应存在，并按 Codex 风格显示短模型名 + 推理强度。
+    expect(screen.getByRole("button", { name: /change model/i })).toBeDefined();
+    expect(screen.getByText("4o")).toBeDefined();
+    expect(screen.getByText("M")).toBeDefined();
+  });
+
+  it("点击后先显示主菜单，hover 后联动展开二级菜单", () => {
+    renderComposer({
+      models: [
+        { provider: "openai", protocol: "openai_chat", model: "gpt-4o" },
+        {
+          provider: "openai",
+          protocol: "openai_chat",
+          model: "gpt-5.5",
+          reasoning: { effort: "high" },
+        },
+      ],
+      activeModel: "openai/gpt-4o",
+      onModelChange: vi.fn(),
+      onReasoningChange: vi.fn().mockResolvedValue(undefined),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /change model/i }));
+    expect(screen.getByText("Model")).toBeDefined();
+    expect(screen.getByText("Reasoning")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "5.5" })).toBeNull();
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: /Model4o/i }));
+    expect(screen.getByRole("button", { name: "5.5" })).toBeDefined();
+
+    fireEvent.mouseEnter(
+      screen.getByRole("button", { name: /ReasoningMedium/i }),
+    );
+    expect(screen.getByRole("button", { name: "Low" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Medium" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "High" })).toBeDefined();
+  });
+
+  it("无模型列表时不渲染选择器", () => {
+    renderComposer();
+    expect(screen.queryByText("openai/gpt-4o")).toBeNull();
+  });
+});
+
+describe("Composer + 附件面板", () => {
+  it("+ 按钮点击展开附件 dropdown", () => {
+    renderComposer({ canAttachImageUrl: true });
+    const plusButton = screen.getByRole("button", {
+      name: /add attachments/i,
+    });
+    fireEvent.click(plusButton);
+    // dropdown 展开后仅含 1 个 Image URL 菜单项。
+    const buttons = screen.getAllByRole("button", { name: /image url/i });
+    expect(buttons.length).toBe(1);
+  });
+
+  it("+ 按钮再次点击收起附件 dropdown", () => {
+    renderComposer({ canAttachImageUrl: true });
+    const plusButton = screen.getByRole("button", {
+      name: /add attachments/i,
+    });
+    fireEvent.click(plusButton);
+    fireEvent.click(plusButton);
+    // 收起后 dropdown 消失，不再有 Image URL 菜单项。
+    expect(screen.queryByRole("button", { name: /image url/i })).toBeNull();
+  });
+});

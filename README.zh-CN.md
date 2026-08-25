@@ -42,6 +42,12 @@ cd gateway
 go run ./cmd/suna-app
 ```
 
+也可以直接用仓库脚本：
+
+```bash
+./scripts/dev-gateway.sh
+```
+
 ```bash
 # 终端 2
 cd frontend

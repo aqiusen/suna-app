@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon, IconButton } from "../../components/Icon";
-import { Select } from "../../components/ui/Select";
 import { useT } from "../../lib/i18n";
 import { ActivityDots } from "../chat/activity";
 import type {
@@ -66,6 +66,7 @@ export function RunDetails(props: RunDetailsProps) {
   } = props;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -373,17 +374,144 @@ export function RunDetails(props: RunDetailsProps) {
               <h3 className="m-0 mb-2 text-[13px] font-bold text-ink">
                 {t("run.sessionModel")}
               </h3>
-              <Select
-                ariaLabel={t("run.sessionModel")}
-                disabled={!selectedModel || controlsDisabled}
-                onValueChange={(value) => void act(() => onUpdateModel(value))}
-                options={modelOptions}
-                value={selectedModel}
+              <button
+                aria-label={t("run.sessionModel")}
+                className="flex min-h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-line bg-surface-raised px-3 py-2 text-left text-[13px] font-semibold text-ink transition-colors duration-150 hover:border-line-strong hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={!selectedModel || controlsDisabled || busy}
+                onClick={() => setModelPickerOpen(true)}
+                title={selectedModel}
+                type="button"
+              >
+                <span className="min-w-0 truncate">{selectedModel}</span>
+                <Icon
+                  className="shrink-0 text-ink-muted"
+                  name="chevron-down"
+                  size={14}
+                />
+              </button>
+              <ModelPickerModal
+                models={modelOptions}
+                onClose={() => setModelPickerOpen(false)}
+                onSelect={(value) =>
+                  void act(async () => {
+                    await onUpdateModel(value);
+                    setModelPickerOpen(false);
+                  })
+                }
+                open={modelPickerOpen}
+                selectedModel={selectedModel}
               />
             </section>
           )}
         </div>
       </aside>
     </>
+  );
+}
+
+type ModelOption = { value: string; label: string; disabled?: boolean };
+
+function ModelPickerModal({
+  open,
+  selectedModel,
+  models,
+  onSelect,
+  onClose,
+}: {
+  open: boolean;
+  selectedModel: string;
+  models: ModelOption[];
+  onSelect: (value: string) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const frame = requestAnimationFrame(() => panelRef.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previous;
+      cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 grid place-items-center p-4">
+      <button
+        aria-label={t("common.close")}
+        className="absolute inset-0 h-full w-full cursor-default border-0 bg-[rgb(15_18_28_/_0.48)] animate-[scrim-in_160ms_ease_both]"
+        onClick={onClose}
+        tabIndex={-1}
+        type="button"
+      />
+      <div
+        aria-label={t("run.sessionModel")}
+        aria-modal="true"
+        className="relative grid w-[min(560px,calc(100vw-32px))] max-h-[min(680px,calc(100vh-48px))] animate-[panel-pop_180ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-2xl border border-line bg-surface-solid shadow-lg focus:outline-none"
+        ref={panelRef}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-[16px] font-extrabold text-ink">
+              {t("run.selectSessionModel")}
+            </h2>
+            <p className="mt-1 truncate text-[12px] text-ink-muted">
+              {selectedModel}
+            </p>
+          </div>
+          <button
+            aria-label={t("common.close")}
+            className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-ink-muted transition-colors duration-150 hover:bg-surface-subtle hover:text-ink"
+            onClick={onClose}
+            type="button"
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+        <div className="max-h-[min(560px,calc(100vh-170px))] overflow-y-auto p-2">
+          {models.map((model) => {
+            const selected = model.value === selectedModel;
+            return (
+              <button
+                className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl px-3 py-3 text-left transition-colors duration-100 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-55"
+                disabled={model.disabled}
+                key={model.value}
+                onClick={() => onSelect(model.value)}
+                type="button"
+              >
+                <span className="min-w-0">
+                  <span className="block break-all text-[13px] font-semibold text-ink">
+                    {model.label}
+                  </span>
+                  <span className="mt-0.5 block break-all text-[11px] text-ink-muted">
+                    {model.value}
+                  </span>
+                </span>
+                {selected && (
+                  <Icon
+                    className="shrink-0 text-blue-strong"
+                    name="check"
+                    size={16}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
