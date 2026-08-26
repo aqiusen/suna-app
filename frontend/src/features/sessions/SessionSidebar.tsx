@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, IconButton } from "../../components/Icon";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { useT } from "../../lib/i18n";
@@ -39,9 +39,7 @@ export function SessionSidebar({
   onRequestCreate,
   onReconnect,
   onJoinActive,
-  onDetach,
   onDelete,
-  onRename,
   onClose,
 }: SessionSidebarProps) {
   const t = useT();
@@ -55,13 +53,6 @@ export function SessionSidebar({
   const [editingProjectCwd, setEditingProjectCwd] = useState<string>();
   const [projectMenuCwd, setProjectMenuCwd] = useState<string>();
   const projectMenuRef = useRef<HTMLDivElement>(null);
-  // 每分钟刷新相对时间（"刚刚/5m 前"不会一直停留在旧值）。
-  const [, tick] = useReducer((value: number) => value + 1, 0);
-  useEffect(() => {
-    const timer = window.setInterval(tick, 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
   useEffect(() => {
     if (!projectMenuCwd) return;
     const onPointerDown = (event: PointerEvent) => {
@@ -218,6 +209,25 @@ export function SessionSidebar({
   const searching = Boolean(query.trim());
   const groupsWithWaiting = groups.filter((group) => group.hasWaiting);
   const groupsRest = groups.filter((group) => !group.hasWaiting);
+  const collapsedInitialized = useRef(false);
+
+  // 首次没有保存过折叠状态时，默认收起所有项目；之后完全尊重用户的手动选择。
+  useEffect(() => {
+    if (collapsedInitialized.current || groups.length === 0) return;
+    collapsedInitialized.current = true;
+    try {
+      if (localStorage.getItem(COLLAPSED_KEY) !== null) return;
+    } catch {
+      // localStorage 不可用时仍使用本次渲染的默认折叠状态。
+    }
+    const next = new Set(groups.map((group) => group.cwd));
+    setCollapsed(next);
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+    } catch {
+      // localStorage 不可用时仅内存生效。
+    }
+  }, [groups]);
 
   return (
     <aside
@@ -284,9 +294,7 @@ export function SessionSidebar({
                 joining={session.id === pendingId}
                 key={session.id}
                 onDelete={handleDelete}
-                onDetach={onDetach}
                 onJoinActive={onJoinActive}
-                onRename={onRename}
                 onSelect={onSelect}
                 onTogglePin={() => togglePin(session.id)}
                 pinned={pinned.has(session.id)}
@@ -324,9 +332,6 @@ export function SessionSidebar({
                           className="h-[7px] w-[7px] shrink-0 rounded-full bg-amber"
                         />
                       )}
-                      <span className="shrink-0 text-[10px] font-bold text-ink-muted">
-                        {group.list.length}
-                      </span>
                     </button>
                     <div
                       className="relative flex shrink-0 items-center gap-0.5"
@@ -339,7 +344,7 @@ export function SessionSidebar({
                       <Tooltip label={t("project.edit")}>
                         <button
                           aria-label={t("project.edit")}
-                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/project:opacity-100 max-[720px]:opacity-100"
+                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/project:opacity-100"
                           onClick={() => openProjectEditor(group.cwd)}
                           type="button"
                         >
@@ -350,7 +355,7 @@ export function SessionSidebar({
                         <button
                           aria-expanded={projectMenuCwd === group.cwd}
                           aria-label={t("project.more")}
-                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/project:opacity-100 max-[720px]:opacity-100"
+                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/project:opacity-100"
                           onClick={() =>
                             setProjectMenuCwd((current) =>
                               current === group.cwd ? undefined : group.cwd,
@@ -383,9 +388,7 @@ export function SessionSidebar({
                           joining={session.id === pendingId}
                           key={session.id}
                           onDelete={handleDelete}
-                          onDetach={onDetach}
                           onJoinActive={onJoinActive}
-                          onRename={onRename}
                           onSelect={onSelect}
                           onTogglePin={() => togglePin(session.id)}
                           pinned={pinned.has(session.id)}

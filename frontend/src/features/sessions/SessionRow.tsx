@@ -1,17 +1,14 @@
-import { useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { useT } from "../../lib/i18n";
 import type { SessionInfo } from "../../lib/runtimeBridge";
-import { relativeTime, statusLabels } from "./sidebarUtils";
+import { statusLabels } from "./sidebarUtils";
 
 export function SessionRow({
   disabled,
   joining,
   onDelete,
-  onDetach,
   onJoinActive,
-  onRename,
   onSelect,
   onTogglePin,
   pinned,
@@ -21,9 +18,7 @@ export function SessionRow({
   disabled: boolean;
   joining: boolean;
   onDelete?: (id: string) => void;
-  onDetach?: () => void;
   onJoinActive: (id: string) => void;
-  onRename?: () => void;
   onSelect: (id: string) => void;
   onTogglePin?: () => void;
   pinned?: boolean;
@@ -31,30 +26,10 @@ export function SessionRow({
   session: SessionInfo;
 }) {
   const t = useT();
-  const [menuFor, setMenuFor] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const canJoin =
     session.status === "running" && !selected && !disabled && !joining;
   const hasQuickActions = Boolean(onTogglePin || onDelete);
-  const hasOverflowActions = Boolean(onDetach || onRename);
-  const actionPadding = hasQuickActions
-    ? hasOverflowActions
-      ? "pr-28"
-      : "pr-16"
-    : hasOverflowActions
-      ? "pr-9"
-      : "";
-
-  // 点击会话菜单外部时关闭菜单，避免菜单残留。
-  useEffect(() => {
-    if (!menuFor) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node))
-        setMenuFor(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [menuFor]);
+  const actionPadding = hasQuickActions ? "pr-16" : "";
 
   return (
     <div className={`group relative my-0.5 ${joining ? "opacity-60" : ""}`}>
@@ -81,20 +56,10 @@ export function SessionRow({
           <strong className="truncate text-[12px] font-extrabold text-ink">
             {session.title || t("sidebar.untitled")}
           </strong>
-          <span className="flex min-w-0 items-center gap-2 text-[10px] font-bold">
-            <span
-              className={`${session.status === "running" ? "text-blue-strong" : session.status === "waiting" ? "text-amber" : "text-ink-muted"}`}
-            >
-              {joining ? t("sidebar.opening") : t(statusLabels[session.status])}
-            </span>
-            <time className="shrink-0 font-normal text-ink-muted">
-              {t(relativeTime(session.updated_at))}
-            </time>
-          </span>
         </span>
       </button>
       {hasQuickActions && (
-        <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 max-[720px]:opacity-100">
+        <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
           {onTogglePin && (
             <Tooltip label={pinned ? t("sidebar.unpin") : t("sidebar.pin")}>
               <button
@@ -138,78 +103,6 @@ export function SessionRow({
         >
           {t("sidebar.join")}
         </button>
-      )}
-      {selected && hasOverflowActions && (
-        <div className="absolute top-1 right-1.5" ref={menuRef}>
-          <button
-            aria-expanded={menuFor}
-            aria-label={t("sidebar.sessionActions")}
-            className="grid h-7 w-7 cursor-pointer place-items-center rounded-lg text-ink-muted opacity-0 transition-[opacity,background] duration-150 hover:bg-surface-subtle hover:text-ink focus:opacity-100 group-hover:opacity-100 max-[720px]:opacity-100"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuFor((value) => !value);
-            }}
-            type="button"
-          >
-            <Icon name="ellipsis" size={15} />
-          </button>
-          {menuFor && (
-            <div className="absolute top-8 right-0 z-10 w-36 animate-[panel-pop_160ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-xl border border-line bg-surface-solid py-1 shadow-lg">
-              {!hasQuickActions && onTogglePin && (
-                <button
-                  className="block w-full cursor-pointer px-3 py-2 text-left text-[12px] font-semibold text-ink-soft transition-colors duration-100 hover:bg-surface-subtle hover:text-ink"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuFor(false);
-                    onTogglePin();
-                  }}
-                  type="button"
-                >
-                  {pinned ? t("sidebar.unpin") : t("sidebar.pin")}
-                </button>
-              )}
-              {onRename && (
-                <button
-                  className="block w-full cursor-pointer px-3 py-2 text-left text-[12px] font-semibold text-ink-soft transition-colors duration-100 hover:bg-surface-subtle hover:text-ink"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuFor(false);
-                    onRename();
-                  }}
-                  type="button"
-                >
-                  {t("sidebar.rename")}
-                </button>
-              )}
-              {onDetach && (
-                <button
-                  className="block w-full cursor-pointer px-3 py-2 text-left text-[12px] font-semibold text-ink-soft transition-colors duration-100 hover:bg-surface-subtle hover:text-ink"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuFor(false);
-                    onDetach();
-                  }}
-                  type="button"
-                >
-                  {t("sidebar.detach")}
-                </button>
-              )}
-              {!hasQuickActions && onDelete && (
-                <button
-                  className="block w-full cursor-pointer px-3 py-2 text-left text-[12px] font-semibold text-rose transition-colors duration-100 hover:bg-rose/10"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuFor(false);
-                    onDelete(session.id);
-                  }}
-                  type="button"
-                >
-                  {t("sidebar.delete")}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
       )}
     </div>
   );

@@ -100,7 +100,6 @@ function AppShell() {
     send,
     updateModel,
     rename,
-    detach,
     remove,
     mcpServers,
     refreshMcp,
@@ -154,16 +153,7 @@ function AppShell() {
         disabled={syncing}
         selectedId={selectedId}
         sessions={sessions}
-        onDetach={selectedId ? () => void detach() : undefined}
         onDelete={cap("session") ? (id) => void remove(id) : undefined}
-        onRename={
-          selected && cap("session") && !sessionActionsFrozen && !observer
-            ? () => {
-                setTitleDraft(selected.title ?? "");
-                setEditingTitle(true);
-              }
-            : undefined
-        }
         onClose={() => setMobileMenuOpen(false)}
       />
       {/* 移动端抽屉遮罩：常驻 DOM，is-visible 控制淡入淡出（CSS 过渡）。 */}

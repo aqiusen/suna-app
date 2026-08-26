@@ -48,14 +48,6 @@ export const waitingRank: Record<SessionInfo["status"], number> = {
   idle: 3,
 };
 
-export function relativeTime(value: string) {
-  const seconds = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000);
-  if (seconds < 60) return "time.justNow";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-  return new Date(value).toLocaleDateString();
-}
-
 export type SessionSidebarProps = {
   sessions: SessionInfo[];
   selectedId?: string;
@@ -74,8 +66,6 @@ export type SessionSidebarProps = {
   /** 未连接时点击重新连接；已连接时该按钮仅为状态展示。 */
   onReconnect: () => void;
   onJoinActive: (id: string) => void;
-  onDetach?: () => void;
   onDelete?: (id: string) => void;
-  onRename?: () => void;
   onClose?: () => void;
 };
