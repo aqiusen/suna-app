@@ -70,6 +70,7 @@ func (a *App) GatewayAuth() map[string]string {
 type PickedFile struct {
 	Path     string `json:"path"`
 	Name     string `json:"name"`
+	IsDir    bool   `json:"is_dir,omitempty"`
 	MimeType string `json:"mime_type,omitempty"`
 	Size     int64  `json:"size,omitempty"`
 }
@@ -138,6 +139,7 @@ func (a *App) ResolvePastedFiles(fileURLs []string) ([]PickedFile, error) {
 func describeLocalFile(path string) PickedFile {
 	file := PickedFile{Path: path, Name: filepath.Base(path)}
 	if info, err := os.Stat(path); err == nil {
+		file.IsDir = info.IsDir()
 		file.Size = info.Size()
 	}
 	file.MimeType = mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))

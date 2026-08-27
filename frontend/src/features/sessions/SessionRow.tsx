@@ -1,4 +1,5 @@
 import { Icon } from "../../components/Icon";
+import { OverflowMarquee } from "../../components/OverflowMarquee";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { useT } from "../../lib/i18n";
 import type { SessionInfo } from "../../lib/runtimeBridge";
@@ -9,6 +10,7 @@ export function SessionRow({
   joining,
   onDelete,
   onJoinActive,
+  onRename,
   onSelect,
   onTogglePin,
   pinned,
@@ -19,6 +21,7 @@ export function SessionRow({
   joining: boolean;
   onDelete?: (id: string) => void;
   onJoinActive: (id: string) => void;
+  onRename?: (id: string) => void;
   onSelect: (id: string) => void;
   onTogglePin?: () => void;
   pinned?: boolean;
@@ -28,8 +31,9 @@ export function SessionRow({
   const t = useT();
   const canJoin =
     session.status === "running" && !selected && !disabled && !joining;
-  const hasQuickActions = Boolean(onTogglePin || onDelete);
-  const actionPadding = hasQuickActions ? "pr-16" : "";
+  const canDeleteSession = session.status === "idle";
+  const hasQuickActions = Boolean(onTogglePin || onRename || onDelete);
+  const actionPadding = hasQuickActions ? "pr-24" : "";
 
   return (
     <div className={`group relative my-0.5 ${joining ? "opacity-60" : ""}`}>
@@ -53,13 +57,15 @@ export function SessionRow({
           className={`h-[7px] w-[7px] rounded-full ${session.status === "running" ? "animate-[breathe_2.4s_ease-in-out_infinite] bg-blue shadow-[0_0_0_4px_var(--color-blue-soft)]" : session.status === "waiting" ? "bg-amber" : session.status === "compacting" ? "animate-[breathe_1.8s_ease-in-out_infinite] bg-blue shadow-[0_0_0_3px_var(--color-blue-soft)]" : "bg-ink-muted"}`}
         />
         <span className="grid min-w-0 gap-0.5">
-          <strong className="truncate text-[12px] font-extrabold text-ink">
-            {session.title || t("sidebar.untitled")}
+          <strong className="block min-w-0 text-[12px] font-extrabold text-ink">
+            <OverflowMarquee text={session.title || t("sidebar.untitled")} />
           </strong>
         </span>
       </button>
       {hasQuickActions && (
-        <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+        <div
+          className={`absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 ${selected ? "opacity-100" : "opacity-0"}`}
+        >
           {onTogglePin && (
             <Tooltip label={pinned ? t("sidebar.unpin") : t("sidebar.pin")}>
               <button
@@ -76,16 +82,42 @@ export function SessionRow({
               </button>
             </Tooltip>
           )}
-          {onDelete && (
-            <Tooltip label={t("sidebar.delete")}>
+          {onRename && (
+            <Tooltip label={t("sidebar.rename")}>
               <button
-                aria-label={t("sidebar.delete")}
+                aria-label={t("sidebar.rename")}
+                className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted transition-colors hover:bg-surface-solid hover:text-ink disabled:cursor-wait disabled:opacity-50"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRename(session.id);
+                }}
+                disabled={disabled || joining}
+                type="button"
+              >
+                <Icon name="pencil" size={14} />
+              </button>
+            </Tooltip>
+          )}
+          {onDelete && (
+            <Tooltip
+              label={
+                canDeleteSession
+                  ? t("sidebar.delete")
+                  : t("sidebar.deleteIdleOnly")
+              }
+            >
+              <button
+                aria-label={
+                  canDeleteSession
+                    ? t("sidebar.delete")
+                    : t("sidebar.deleteIdleOnly")
+                }
                 className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted transition-colors hover:bg-rose/10 hover:text-rose disabled:cursor-wait disabled:opacity-50"
                 onClick={(event) => {
                   event.stopPropagation();
                   onDelete(session.id);
                 }}
-                disabled={disabled || joining}
+                disabled={disabled || joining || !canDeleteSession}
                 type="button"
               >
                 <Icon name="trash" size={14} />
@@ -97,7 +129,7 @@ export function SessionRow({
       {canJoin && (
         <button
           aria-label={t("sidebar.joinRunning")}
-          className={`absolute top-1.5 ${hasQuickActions ? "right-16" : "right-2"} cursor-pointer rounded-md bg-blue px-2 py-1 text-[10px] font-bold text-white shadow-sm transition-colors duration-150 hover:bg-blue-strong`}
+          className={`absolute top-1.5 ${hasQuickActions ? "right-24" : "right-2"} cursor-pointer rounded-md bg-blue px-2 py-1 text-[10px] font-bold text-white shadow-sm transition-colors duration-150 hover:bg-blue-strong`}
           onClick={() => onJoinActive(session.id)}
           type="button"
         >

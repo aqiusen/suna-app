@@ -1,30 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, IconButton } from "../../components/Icon";
 import { Tooltip } from "../../components/ui/Tooltip";
+import { SessionDeleteConfirm } from "./SessionDeleteConfirm";
 import { useT } from "../../lib/i18n";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import type { SessionInfo } from "../../lib/runtimeBridge";
 import { SessionRow } from "./SessionRow";
-import { ProjectDialog } from "./ProjectDialog";
 import {
-  loadHiddenProjects,
-  loadLocalProjects,
-  saveHiddenProjects,
-  saveLocalProjects,
-  type LocalProject,
-} from "./projectStore";
-import {
-  COLLAPSED_KEY,
-  loadCollapsed,
   loadPinned,
   PINNED_KEY,
-  projectName,
+  workdirName,
+  workdirPathKey,
   type SessionSidebarProps,
   waitingRank,
 } from "./sidebarUtils";
 
-/** 侧栏：搜索 + 按项目分组 + waiting 置顶。
- * 分组状态存 localStorage；搜索时临时平铺（设计 §6.2）。 */
+/** 侧栏：Runtime session 列表按工作目录分组，搜索时临时平铺。 */
 export function SessionSidebar({
   sessions,
   selectedId,
@@ -34,37 +25,35 @@ export function SessionSidebar({
   pendingId,
   disabled = false,
   onSelect,
-  // onCreate 由 Dialog 承担（onRequestCreate）；prop 保留仅为类型兼容，
-  // 不在此处解构使用（避免 no-unused-vars）。
+  onCreate,
   onRequestCreate,
   onReconnect,
   onJoinActive,
   onDelete,
+  onRename,
+  onDeleteWorkdir,
   onClose,
 }: SessionSidebarProps) {
   const t = useT();
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [pinned, setPinned] = useState<Set<string>>(loadPinned);
-  const [localProjects, setLocalProjects] =
-    useState<Record<string, LocalProject>>(loadLocalProjects);
-  const [hiddenProjects, setHiddenProjects] =
-    useState<Set<string>>(loadHiddenProjects);
-  const [editingProjectCwd, setEditingProjectCwd] = useState<string>();
-  const [projectMenuCwd, setProjectMenuCwd] = useState<string>();
-  const projectMenuRef = useRef<HTMLDivElement>(null);
+  const [workdirMenuCwd, setWorkdirMenuCwd] = useState<string>();
+  const [confirmingWorkdirCwd, setConfirmingWorkdirCwd] = useState<string>();
+  const [confirmingSessionId, setConfirmingSessionId] = useState<string>();
+  const workdirMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!projectMenuCwd) return;
+    if (!workdirMenuCwd) return;
     const onPointerDown = (event: PointerEvent) => {
       if (
-        projectMenuRef.current &&
-        !projectMenuRef.current.contains(event.target as Node)
+        workdirMenuRef.current &&
+        !workdirMenuRef.current.contains(event.target as Node)
       )
-        setProjectMenuCwd(undefined);
+        setWorkdirMenuCwd(undefined);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [projectMenuCwd]);
+  }, [workdirMenuCwd]);
 
   // 移动端（≤720px）侧栏是抽屉：未打开时对屏幕阅读器和 Tab 聚焦隐藏，
   // 避免读屏读到屏幕外的会话列表、键盘焦点落到不可见元素上。
@@ -76,11 +65,6 @@ export function SessionSidebar({
       const next = new Set(value);
       if (next.has(cwd)) next.delete(cwd);
       else next.add(cwd);
-      try {
-        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
-      } catch {
-        // localStorage 不可用时仅内存生效。
-      }
       return next;
     });
   }
@@ -99,8 +83,7 @@ export function SessionSidebar({
     });
   }
 
-  /** 删除会话时同步清理置顶记忆，避免残留失效 id。 */
-  function handleDelete(id: string) {
+  function unpin(id: string) {
     setPinned((value) => {
       const next = new Set(value);
       next.delete(id);
@@ -111,50 +94,28 @@ export function SessionSidebar({
       }
       return next;
     });
-    onDelete?.(id);
   }
 
-  function openProjectEditor(cwd: string) {
-    setProjectMenuCwd(undefined);
-    setEditingProjectCwd(cwd);
+  function requestDelete(id: string) {
+    setConfirmingSessionId(id);
   }
 
-  function saveProject(cwd: string, name: string, sourceFolders: string[]) {
-    setLocalProjects((current) => {
-      const next = {
-        ...current,
-        [cwd]: { name, sourceFolders },
-      };
-      saveLocalProjects(next);
-      return next;
-    });
+  function requestDeleteWorkdir(cwd: string) {
+    setWorkdirMenuCwd(undefined);
+    setConfirmingWorkdirCwd(cwd);
   }
 
-  function removeProject(cwd: string) {
-    const project = localProjects[cwd];
-    if (!window.confirm(t("project.removeConfirm"))) return;
-    setLocalProjects((current) => {
-      const next = { ...current };
-      delete next[cwd];
-      saveLocalProjects(next);
-      return next;
-    });
-    setHiddenProjects((current) => {
-      const next = new Set(current);
-      next.add(cwd);
-      for (const folder of project?.sourceFolders ?? []) next.add(folder);
-      saveHiddenProjects(next);
-      return next;
-    });
-    setProjectMenuCwd(undefined);
-    setEditingProjectCwd(undefined);
+  async function confirmDeleteWorkdir() {
+    const cwd = confirmingWorkdirCwd;
+    if (!cwd || !onDeleteWorkdir) return;
+    setConfirmingWorkdirCwd(undefined);
+    await onDeleteWorkdir(cwd);
   }
 
   // 排序：手动置顶 > waiting 置顶（设计 §6.2）> 其余按更新时间倒序。
   const sorted = useMemo(
     () =>
       sessions
-        .filter((session) => !hiddenProjects.has(session.cwd))
         .map((session) => ({
           session,
           updatedAt: new Date(session.updated_at).getTime(),
@@ -169,7 +130,7 @@ export function SessionSidebar({
           return b.updatedAt - a.updatedAt;
         })
         .map((item) => item.session),
-    [hiddenProjects, pinned, sessions],
+    [pinned, sessions],
   );
 
   // 搜索：过滤标题 + 路径，搜索时平铺（临时取消分组）。
@@ -180,53 +141,37 @@ export function SessionSidebar({
       (session) =>
         (session.title ?? "").toLowerCase().includes(q) ||
         session.cwd.toLowerCase().includes(q) ||
-        projectName(session.cwd).toLowerCase().includes(q),
+        workdirName(session.cwd).toLowerCase().includes(q),
     );
   }, [sorted, query]);
 
   // 分组：按 cwd 聚合，组内保持 waiting 优先 + 时间倒序。
   const groups = useMemo(() => {
-    const map = new Map<string, SessionInfo[]>();
-    const projectBySource = new Map<string, string>();
-    for (const [projectCwd, project] of Object.entries(localProjects)) {
-      projectBySource.set(projectCwd, projectCwd);
-      for (const sourceFolder of project.sourceFolders)
-        projectBySource.set(sourceFolder, projectCwd);
-    }
+    const map = new Map<string, { cwd: string; list: SessionInfo[] }>();
     for (const session of filtered) {
-      const projectCwd = projectBySource.get(session.cwd) ?? session.cwd;
-      const list = map.get(projectCwd) ?? [];
-      list.push(session);
-      map.set(projectCwd, list);
+      const key = workdirPathKey(session.cwd);
+      const group = map.get(key) ?? { cwd: session.cwd, list: [] };
+      group.list.push(session);
+      map.set(key, group);
     }
-    return [...map.entries()].map(([cwd, list]) => ({
+    return [...map.values()].map(({ cwd, list }) => ({
       cwd,
-      name: localProjects[cwd]?.name || projectName(cwd),
+      name: workdirName(cwd),
       list,
       hasWaiting: list.some((session) => session.status === "waiting"),
     }));
-  }, [filtered, localProjects]);
+  }, [filtered]);
   const searching = Boolean(query.trim());
   const groupsWithWaiting = groups.filter((group) => group.hasWaiting);
   const groupsRest = groups.filter((group) => !group.hasWaiting);
   const collapsedInitialized = useRef(false);
 
-  // 首次没有保存过折叠状态时，默认收起所有项目；之后完全尊重用户的手动选择。
+  // 每次进入侧栏都从全折叠开始，避免上一次会话留下展开的项目。
   useEffect(() => {
     if (collapsedInitialized.current || groups.length === 0) return;
     collapsedInitialized.current = true;
-    try {
-      if (localStorage.getItem(COLLAPSED_KEY) !== null) return;
-    } catch {
-      // localStorage 不可用时仍使用本次渲染的默认折叠状态。
-    }
     const next = new Set(groups.map((group) => group.cwd));
     setCollapsed(next);
-    try {
-      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
-    } catch {
-      // localStorage 不可用时仅内存生效。
-    }
   }, [groups]);
 
   return (
@@ -293,8 +238,9 @@ export function SessionSidebar({
                 disabled={disabled}
                 joining={session.id === pendingId}
                 key={session.id}
-                onDelete={handleDelete}
+                onDelete={onDelete ? requestDelete : undefined}
                 onJoinActive={onJoinActive}
+                onRename={onRename}
                 onSelect={onSelect}
                 onTogglePin={() => togglePin(session.id)}
                 pinned={pinned.has(session.id)}
@@ -305,7 +251,7 @@ export function SessionSidebar({
           : [...groupsWithWaiting, ...groupsRest].map((group) => {
               const isCollapsed = collapsed.has(group.cwd);
               return (
-                <div className="group/project mb-1" key={group.cwd}>
+                <div className="group/workdir mb-1" key={group.cwd}>
                   <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-surface-subtle">
                     <button
                       aria-expanded={!isCollapsed}
@@ -336,28 +282,18 @@ export function SessionSidebar({
                     <div
                       className="relative flex shrink-0 items-center gap-0.5"
                       ref={
-                        projectMenuCwd === group.cwd
-                          ? projectMenuRef
+                        workdirMenuCwd === group.cwd
+                          ? workdirMenuRef
                           : undefined
                       }
                     >
-                      <Tooltip label={t("project.edit")}>
+                      <Tooltip label={t("group.more")}>
                         <button
-                          aria-label={t("project.edit")}
-                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/project:opacity-100"
-                          onClick={() => openProjectEditor(group.cwd)}
-                          type="button"
-                        >
-                          <Icon name="pencil" size={14} />
-                        </button>
-                      </Tooltip>
-                      <Tooltip label={t("project.more")}>
-                        <button
-                          aria-expanded={projectMenuCwd === group.cwd}
-                          aria-label={t("project.more")}
-                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/project:opacity-100"
+                          aria-expanded={workdirMenuCwd === group.cwd}
+                          aria-label={t("group.more")}
+                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/workdir:opacity-100"
                           onClick={() =>
-                            setProjectMenuCwd((current) =>
+                            setWorkdirMenuCwd((current) =>
                               current === group.cwd ? undefined : group.cwd,
                             )
                           }
@@ -366,16 +302,30 @@ export function SessionSidebar({
                           <Icon name="ellipsis" size={14} />
                         </button>
                       </Tooltip>
-                      {projectMenuCwd === group.cwd && (
+                      {workdirMenuCwd === group.cwd && (
                         <div className="absolute top-8 right-0 z-10 w-36 overflow-hidden rounded-lg border border-line bg-surface-solid py-1 shadow-lg">
                           <button
-                            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-rose transition-colors hover:bg-rose/10"
-                            onClick={() => removeProject(group.cwd)}
+                            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-ink-soft transition-colors hover:bg-surface-subtle hover:text-ink"
+                            disabled={disabled}
+                            onClick={() => {
+                              setWorkdirMenuCwd(undefined);
+                              void onCreate(group.cwd);
+                            }}
                             type="button"
                           >
-                            <Icon name="trash" size={14} />
-                            {t("project.remove")}
+                            <Icon name="plus" size={14} />
+                            {t("group.newSession")}
                           </button>
+                          {onDeleteWorkdir && (
+                            <button
+                              className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-rose transition-colors hover:bg-rose/10"
+                              onClick={() => requestDeleteWorkdir(group.cwd)}
+                              type="button"
+                            >
+                              <Icon name="trash" size={14} />
+                              {t("group.delete")}
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -387,8 +337,9 @@ export function SessionSidebar({
                           disabled={disabled}
                           joining={session.id === pendingId}
                           key={session.id}
-                          onDelete={handleDelete}
+                          onDelete={onDelete ? requestDelete : undefined}
                           onJoinActive={onJoinActive}
+                          onRename={onRename}
                           onSelect={onSelect}
                           onTogglePin={() => togglePin(session.id)}
                           pinned={pinned.has(session.id)}
@@ -402,25 +353,24 @@ export function SessionSidebar({
               );
             })}
       </nav>
-      {editingProjectCwd && (
-        <ProjectDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setEditingProjectCwd(undefined);
+      {(confirmingSessionId || confirmingWorkdirCwd) && (
+        <SessionDeleteConfirm
+          kind={confirmingSessionId ? "session" : "workdir"}
+          onCancel={() => {
+            setConfirmingSessionId(undefined);
+            setConfirmingWorkdirCwd(undefined);
           }}
-          onRemove={() => removeProject(editingProjectCwd)}
-          onSave={(name, sourceFolders) =>
-            saveProject(editingProjectCwd, name, sourceFolders)
-          }
-          projectName={
-            localProjects[editingProjectCwd]?.name ||
-            projectName(editingProjectCwd)
-          }
-          sourceFolders={
-            localProjects[editingProjectCwd]?.sourceFolders ?? [
-              editingProjectCwd,
-            ]
-          }
+          onConfirm={() => {
+            if (confirmingSessionId) {
+              const id = confirmingSessionId;
+              if (!onDelete) return;
+              setConfirmingSessionId(undefined);
+              unpin(id);
+              onDelete(id);
+              return;
+            }
+            void confirmDeleteWorkdir();
+          }}
         />
       )}
       <div className="mt-auto border-t border-line pt-3">

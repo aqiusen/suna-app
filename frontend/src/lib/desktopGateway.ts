@@ -5,17 +5,33 @@ type WailsAppBinding = {
   }>;
   /** 原生多选文件对话框，返回本机绝对路径（仅桌面壳存在）。 */
   SelectFiles?: () => Promise<
-    { path: string; name: string; mime_type?: string; size?: number }[]
+    {
+      path: string;
+      name: string;
+      is_dir?: boolean;
+      mime_type?: string;
+      size?: number;
+    }[]
   >;
   /** 原生文件夹选择对话框。 */
   SelectDirectory?: () => Promise<
-    { path: string; name: string; mime_type?: string; size?: number }[]
+    {
+      path: string;
+      name: string;
+      is_dir?: boolean;
+      mime_type?: string;
+      size?: number;
+    }[]
   >;
   /** 把粘贴事件里的 file:// URL 解析为本机路径。 */
-  ResolvePastedFiles?: (
-    fileURLs: string[],
-  ) => Promise<
-    { path: string; name: string; mime_type?: string; size?: number }[]
+  ResolvePastedFiles?: (fileURLs: string[]) => Promise<
+    {
+      path: string;
+      name: string;
+      is_dir?: boolean;
+      mime_type?: string;
+      size?: number;
+    }[]
   >;
 };
 
@@ -59,6 +75,7 @@ export function hasNativeFileDialogs(): boolean {
 export type PickedFile = {
   path: string;
   name: string;
+  is_dir?: boolean;
   mime_type?: string;
   size?: number;
 };

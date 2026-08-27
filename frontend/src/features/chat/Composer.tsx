@@ -42,6 +42,62 @@ type ComposerProps = {
   onApprovalModeChange?: (mode: string) => Promise<void>;
 };
 
+function isImageFile(file: PickedFile): boolean {
+  return (
+    !file.is_dir && file.mime_type?.toLowerCase().startsWith("image/") === true
+  );
+}
+
+/** 把附件意图作为文本传给 Agent，路径本身不代表可执行指令。 */
+export function buildAttachmentParts(
+  message: string,
+  imageUrls: string[],
+  localFiles: PickedFile[],
+): MessagePart[] {
+  const resources: string[] = [];
+  for (const url of imageUrls) {
+    resources.push(`- Inspect this image URL: ${url}`);
+  }
+  for (const file of localFiles) {
+    if (file.is_dir) {
+      resources.push(`- Work in this directory: ${file.path}`);
+    } else if (isImageFile(file)) {
+      resources.push(`- Inspect this image: ${file.path}`);
+    } else {
+      resources.push(`- Read and analyze this file: ${file.path}`);
+    }
+  }
+
+  const parts: MessagePart[] = [];
+  if (message) parts.push({ type: "text", text: message });
+  if (resources.length > 0) {
+    parts.push({
+      type: "text",
+      text: [
+        "The user attached the following resources. Use the paths as user-provided references and use file tools as needed:",
+        ...resources,
+      ].join("\n"),
+    });
+  }
+  for (const url of imageUrls) {
+    parts.push({ type: "image", source: { kind: "url", url } });
+  }
+  for (const file of localFiles) {
+    if (!isImageFile(file)) continue;
+    parts.push({
+      type: "image",
+      source: {
+        kind: "path",
+        path: file.path,
+        name: file.name,
+        mime_type: file.mime_type,
+        size: file.size,
+      },
+    });
+  }
+  return parts;
+}
+
 // Wails WebView 粘贴文件时 File 对象带非标准 path 属性（本机绝对路径）。
 // DOM 类型不包含它，这里做一次窄化声明；仅桌面壳场景有值。
 declare global {
@@ -196,27 +252,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
       setSending(true);
       setError(undefined);
-      const parts: MessagePart[] = [];
-      if (message) parts.push({ type: "text", text: message });
       // 全部附件（已添加 chips + 输入框未添加的一个）一起提交。
       const urls = imageUrls.map((url) => url.trim()).filter(Boolean);
       if (imageUrl.trim()) urls.push(imageUrl.trim());
-      for (const url of urls) {
-        parts.push({ type: "image", source: { kind: "url", url } });
-      }
-      // 本机文件以 path kind 引用：Runtime 与 Gateway 同机可直接读取。
-      for (const file of localFiles) {
-        parts.push({
-          type: "image",
-          source: {
-            kind: "path",
-            path: file.path,
-            name: file.name,
-            mime_type: file.mime_type,
-            size: file.size,
-          },
-        });
-      }
+      const parts = buildAttachmentParts(message, urls, localFiles);
       // 乐观清空：立即清空输入（发送按钮进入 sending 态），失败时恢复草稿，
       // 避免网络慢时用户误以为没发出而重复提交。
       const prevDraft = draft;

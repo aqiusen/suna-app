@@ -230,6 +230,17 @@ button {
     transform: translateY(0) scale(1);
   }
 }
+/* 标题走马灯：开头多停一会儿，位移 = 一份全文 + gap（2rem）的一半再减 1rem。 */
+@keyframes title-marquee {
+  0%,
+  22% {
+    transform: translateX(0);
+  }
+  88%,
+  100% {
+    transform: translateX(calc(-50% - 1rem));
+  }
+}
 /* 弹层/面板退出动画：与 panel-pop 对称，关闭时播放避免瞬消。 */
 @keyframes panel-out {
   from {
@@ -366,6 +377,11 @@ button {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+  /* 减少动效时停在原文开头，避免 0.001ms 动画跳到位移终点。 */
+  .overflow-marquee.is-overflow .overflow-marquee-track {
+    animation: none !important;
+    transform: none !important;
+  }
 }
 
 /*
@@ -496,6 +512,64 @@ button {
  * 底部 Sheet、长滚动容器）。简单样式一律写在组件 JSX 的 Tailwind 原子类中。
  */
 @layer components {
+  /* 会话名跑马灯：视口锁住父级宽度；顶栏标题静止时尾部省略。 */
+  .overflow-marquee {
+    position: relative;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .overflow-marquee-measure {
+    position: absolute;
+    top: 0;
+    left: 0;
+    visibility: hidden;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .overflow-marquee-ellipsis {
+    display: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .overflow-marquee-track {
+    display: inline-flex;
+    align-items: center;
+    width: max-content;
+    gap: 2rem;
+  }
+  .overflow-marquee-text {
+    flex: none;
+    white-space: nowrap;
+  }
+  .overflow-marquee.is-overflow .overflow-marquee-track {
+    animation: title-marquee var(--marquee-duration, 22s) linear infinite;
+  }
+  .overflow-marquee.is-ellipsis.is-overflow .overflow-marquee-ellipsis {
+    display: block;
+  }
+  .overflow-marquee.is-ellipsis.is-overflow .overflow-marquee-track {
+    display: none;
+    animation: none;
+  }
+  .overflow-marquee.is-ellipsis.is-overflow:hover .overflow-marquee-ellipsis,
+  .group:hover
+    .overflow-marquee.is-ellipsis.is-overflow
+    .overflow-marquee-ellipsis {
+    display: none;
+  }
+  .overflow-marquee.is-ellipsis.is-overflow:hover .overflow-marquee-track,
+  .group:hover
+    .overflow-marquee.is-ellipsis.is-overflow
+    .overflow-marquee-track {
+    display: inline-flex;
+    animation: title-marquee var(--marquee-duration, 22s) linear infinite;
+  }
+
   /* 三栏工作台：桌面 260/1fr/328，关闭右栏时第三列收起。 */
   .app-shell {
     display: grid;

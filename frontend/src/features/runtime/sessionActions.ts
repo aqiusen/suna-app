@@ -172,7 +172,7 @@ export function createSessionActions({
 
   async function rename(title: string) {
     const scope = scopeRef.current;
-    if (!scope || isSessionActionsFrozen()) return;
+    if (!scope || isSessionActionsFrozen()) return false;
     try {
       const snapshot = await queueSessionOperation(async () => {
         if (!activeScopeMatches(scope))
@@ -183,18 +183,28 @@ export function createSessionActions({
         });
       });
       // session.update 的响应只对发起它的那次 attach 有效；
-      // 之后的 handoff 绝不能用它重绘快照。
-      if (!activeScopeMatches(scope)) return;
-      setActive((value) => ({ ...value, snapshot }));
+      // 之后的 handoff 绝不能用它重绘快照。纯改标题时 Runtime 不带回
+      // messages，必须保留当前时间线，避免主区被空快照清空。
+      if (!activeScopeMatches(scope)) return false;
+      setActive((value) => ({
+        ...value,
+        snapshot: {
+          ...snapshot,
+          messages: value.snapshot?.messages ?? snapshot.messages,
+        },
+        toolSummary: snapshot.tool_summary ?? value.toolSummary,
+      }));
       mergeSession(snapshot.session);
       await loadSessions();
       toast("success", t("action.titleUpdated"));
+      return true;
     } catch (reason) {
       setError(
         reason instanceof Error
           ? reason.message
           : t("action.titleUpdateFailed"),
       );
+      return false;
     }
   }
 
@@ -224,23 +234,29 @@ export function createSessionActions({
 
   async function remove(id: string) {
     if (isSyncing() || !canDelete()) return;
-    if (!window.confirm(t("action.deleteConfirm"))) return;
-    const intent = ++attachIntentRef.current;
-    resetQueuedDeltas();
-    scopeRef.current = undefined;
+    // Runtime 拒绝删除当前 attach 的会话；删别的会话不得打断当前 attach
+    // 或清空时间线，否则会误切走正在看的任务。
+    const deletingCurrent = scopeRef.current?.sessionId === id;
+    const intent = deletingCurrent
+      ? ++attachIntentRef.current
+      : attachIntentRef.current;
+    if (deletingCurrent) {
+      resetQueuedDeltas();
+      scopeRef.current = undefined;
+    }
     setSyncBoundary(true);
     try {
       await queueSessionOperation(async () => {
-        // Runtime 拒绝删除当前 attach 的会话：在同一队列中先 detach 再
-        // delete，之后的 attach 意图继续排队，不会插队。
-        await rpc("session.detach", {});
+        if (deletingCurrent) await rpc("session.detach", {});
         await rpc("session.delete", { session_id: id });
-        if (intent !== attachIntentRef.current) return;
-        setSelectedId(undefined);
-        setActive({ flow: [], pendingUsers: [] });
+        if (deletingCurrent && intent !== attachIntentRef.current) return;
+        if (deletingCurrent) {
+          setSelectedId(undefined);
+          setActive({ flow: [], pendingUsers: [] });
+        }
         const list = await loadSessions();
-        if (intent !== attachIntentRef.current) return;
-        if (list[0]) {
+        if (deletingCurrent && intent !== attachIntentRef.current) return;
+        if (deletingCurrent && list[0]) {
           const snapshot = await rpc("session.attach", {
             session_id: list[0].id,
           });
@@ -262,14 +278,94 @@ export function createSessionActions({
         toast("success", t("action.deleted"));
       });
     } catch (reason) {
-      if (intent === attachIntentRef.current)
+      if (!deletingCurrent || intent === attachIntentRef.current) {
         setError(
           reason instanceof Error ? reason.message : t("action.deleteFailed"),
         );
+        await loadSessions().catch(() => undefined);
+      }
+    } finally {
+      if (!deletingCurrent || intent === attachIntentRef.current)
+        setSyncBoundary(false);
+    }
+  }
+
+  async function deleteWorkdirSessions(cwd: string) {
+    const workdir = cwd.trim();
+    if (isSyncing() || !canDelete() || !workdir) return false;
+    const intent = ++attachIntentRef.current;
+    resetQueuedDeltas();
+    setSyncBoundary(true);
+    try {
+      await queueSessionOperation(async () => {
+        const listed = await rpc("session.list", { cwd: workdir });
+        const sessionIds = [
+          ...new Set(listed.sessions.map((session) => session.id)),
+        ];
+        const deletingCurrent = Boolean(
+          scopeRef.current && sessionIds.includes(scopeRef.current.sessionId),
+        );
+        if (deletingCurrent) scopeRef.current = undefined;
+        if (deletingCurrent) await rpc("session.detach", {});
+        for (const sessionId of sessionIds)
+          await rpc("session.delete", { session_id: sessionId });
+        if (intent !== attachIntentRef.current) return;
+
+        if (deletingCurrent) {
+          setSelectedId(undefined);
+          setActive({ flow: [], pendingUsers: [] });
+        }
+        const list = await loadSessions();
+        if (deletingCurrent && list[0]) {
+          const snapshot = await rpc("session.attach", {
+            session_id: list[0].id,
+          });
+          if (intent !== attachIntentRef.current) return;
+          scopeRef.current = {
+            attach: intent,
+            sessionId: snapshot.session.id,
+            runId: snapshot.current_run?.run_id,
+          };
+          setSelectedId(snapshot.session.id);
+          setActive({
+            snapshot,
+            flow: flowFromSnapshot(snapshot),
+            toolSummary: snapshot.tool_summary,
+            pendingUsers: [],
+          });
+          mergeSession(snapshot.session);
+        }
+        toast(
+          "success",
+          sessionIds.length > 0
+            ? t("action.workdirDeleted")
+            : t("action.workdirEmptyDeleted"),
+        );
+      });
+      return true;
+    } catch (reason) {
+      if (intent === attachIntentRef.current) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("action.workdirDeleteFailed"),
+        );
+        // 删除可能已经部分成功，重新读取 Runtime 目录，避免前端继续展示已删除会话。
+        await loadSessions().catch(() => undefined);
+      }
+      return false;
     } finally {
       if (intent === attachIntentRef.current) setSyncBoundary(false);
     }
   }
 
-  return { create, send, updateModel, rename, detach, remove };
+  return {
+    create,
+    send,
+    updateModel,
+    rename,
+    detach,
+    remove,
+    deleteWorkdirSessions,
+  };
 }

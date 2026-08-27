@@ -51,6 +51,7 @@ function AppShell() {
       : "session",
   );
   const [createOpen, setCreateOpen] = useState(false);
+  const [createInitialCwd, setCreateInitialCwd] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsClosing, setSettingsClosing] = useState(false);
   const closeSettings = () => {
@@ -66,6 +67,7 @@ function AppShell() {
   >("connection");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [renamingSessionId, setRenamingSessionId] = useState<string>();
   const [commandOpen, setCommandOpen] = useState(false);
   useGlobalShortcuts({ setCommandOpen, setCreateOpen, setSettingsOpen });
 
@@ -101,11 +103,18 @@ function AppShell() {
     updateModel,
     rename,
     remove,
+    deleteWorkdirSessions,
     mcpServers,
     refreshMcp,
   } = session;
   const sessionActionsFrozen = syncing || !selectedId;
   const current = active.snapshot?.current_run;
+  const canRename = cap("session.update");
+  function openRename(target: { id: string; title?: string }) {
+    setRenamingSessionId(target.id);
+    setTitleDraft(target.title ?? "");
+    setEditingTitle(true);
+  }
 
   useHashRouting({ attach, connected, selectedId });
 
@@ -141,7 +150,10 @@ function AppShell() {
       <SessionSidebar
         connected={connected}
         onCreate={create}
-        onRequestCreate={() => setCreateOpen(true)}
+        onRequestCreate={(cwd) => {
+          setCreateInitialCwd(cwd);
+          setCreateOpen(true);
+        }}
         onReconnect={() => void initialize()}
         runtimeVersion={hello?.runtime_version}
         onSelect={(id) => void attach(id).then(() => setMobileMenuOpen(false))}
@@ -153,7 +165,20 @@ function AppShell() {
         disabled={syncing}
         selectedId={selectedId}
         sessions={sessions}
-        onDelete={cap("session") ? (id) => void remove(id) : undefined}
+        onDelete={cap("session.delete") ? (id) => void remove(id) : undefined}
+        onRename={
+          canRename
+            ? (id) => {
+                const target = sessions.find((item) => item.id === id);
+                if (target) openRename(target);
+              }
+            : undefined
+        }
+        onDeleteWorkdir={
+          cap("session.delete")
+            ? (cwd) => deleteWorkdirSessions(cwd)
+            : undefined
+        }
         onClose={() => setMobileMenuOpen(false)}
       />
       {/* 移动端抽屉遮罩：常驻 DOM，is-visible 控制淡入淡出（CSS 过渡）。 */}
@@ -178,16 +203,38 @@ function AppShell() {
           running={running}
           selected={selected}
           syncing={syncing}
+          onRename={
+            selected && canRename ? () => openRename(selected) : undefined
+          }
         />
         <SessionDialogs
           createOpen={createOpen}
+          createInitialCwd={createInitialCwd}
           editingTitle={editingTitle}
           onCreate={(cwd, title) =>
             create(cwd, title).then(() => setCreateOpen(false))
           }
-          onCreateOpenChange={setCreateOpen}
-          onEditingTitleChange={setEditingTitle}
-          onRename={() => void rename(titleDraft)}
+          onCreateOpenChange={(open) => {
+            setCreateOpen(open);
+            if (!open) setCreateInitialCwd(undefined);
+          }}
+          onEditingTitleChange={(open) => {
+            setEditingTitle(open);
+            if (!open) setRenamingSessionId(undefined);
+          }}
+          onRename={async () => {
+            try {
+              if (renamingSessionId && renamingSessionId !== selectedId)
+                await attach(renamingSessionId);
+              const ok = await rename(titleDraft);
+              if (ok) {
+                setEditingTitle(false);
+                setRenamingSessionId(undefined);
+              }
+            } catch {
+              // attach 失败已由 session hook 写入错误条。
+            }
+          }}
           onTitleDraftChange={setTitleDraft}
           titleDraft={titleDraft}
         />

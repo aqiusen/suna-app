@@ -1,5 +1,6 @@
 import { useEffect, useReducer } from "react";
 import { Icon } from "../../components/Icon";
+import { OverflowMarquee } from "../../components/OverflowMarquee";
 import { useT } from "../../lib/i18n";
 import type { SessionInfo } from "../../lib/runtimeBridge";
 
@@ -53,7 +54,7 @@ function SessionRow({
   return (
     <button
       aria-label={`${session.title || t("sidebar.untitled")}，${pending ? t("sidebar.opening") : t(statusLabels[session.status])}`}
-      className={`grid w-full cursor-pointer grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-3 py-3 text-left transition-[background,transform] duration-180 hover:bg-surface-subtle active:scale-[0.985] disabled:cursor-wait disabled:opacity-60 ${selected ? "bg-surface-solid shadow-sm" : ""}`}
+      className={`group grid w-full cursor-pointer grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-3 py-3 text-left transition-[background,transform] duration-180 hover:bg-surface-subtle active:scale-[0.985] disabled:cursor-wait disabled:opacity-60 ${selected ? "bg-surface-solid shadow-sm" : ""}`}
       disabled={pending}
       onClick={onClick}
       type="button"
@@ -63,8 +64,8 @@ function SessionRow({
         className={`h-[8px] w-[8px] rounded-full ${session.status === "running" ? "animate-[breathe_2.4s_ease-in-out_infinite] bg-blue shadow-[0_0_0_5px_var(--color-blue-soft)]" : session.status === "waiting" ? "bg-amber shadow-[0_0_0_5px_var(--color-amber-soft)]" : session.status === "compacting" ? "animate-[breathe_1.8s_ease-in-out_infinite] bg-blue shadow-[0_0_0_4px_var(--color-blue-soft)]" : "bg-ink-muted"}`}
       />
       <span className="grid min-w-0 gap-0.5">
-        <strong className="truncate text-[13px] font-extrabold text-ink">
-          {session.title || t("sidebar.untitled")}
+        <strong className="block min-w-0 text-[13px] font-extrabold text-ink">
+          <OverflowMarquee text={session.title || t("sidebar.untitled")} />
         </strong>
         <small className="truncate text-[11px] text-ink-muted">
           {session.cwd}

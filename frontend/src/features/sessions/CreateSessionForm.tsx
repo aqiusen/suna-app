@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import { Icon } from "../../components/Icon";
 import {
   isNativeDesktopShell,
@@ -10,61 +10,40 @@ import { useT } from "../../lib/i18n";
 type CreateSessionFormProps = {
   onCancel: () => void;
   onCreate: (cwd: string, title?: string) => Promise<void>;
+  initialCwd?: string;
 };
 
-const RECENT_KEY = "suna-app:recent-projects";
-const RECENT_MAX = 5;
-
-/** 记录一次成功创建的项目路径，供下次打开项目时保留本地记忆。 */
-export function rememberRecentCwd(cwd: string) {
-  try {
-    const next = [
-      cwd,
-      ...readRecentCwds().filter((value) => value !== cwd),
-    ].slice(0, RECENT_MAX);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // localStorage 不可用时静默失败，不影响创建流程。
-  }
-}
-
-function readRecentCwds(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is string => typeof value === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function projectName(cwd: string) {
+function directoryName(cwd: string) {
   const trimmed = cwd.replace(/\/+$/, "");
   const base = trimmed.split("/").pop() || trimmed;
   return base || cwd;
 }
 
-/** 新建会话表单：项目名 + 可拖放的工作文件夹。 */
+/** 新建会话表单：可选标题 + 可拖放的工作目录。 */
 export function CreateSessionForm({
   onCancel,
   onCreate,
+  initialCwd,
 }: CreateSessionFormProps) {
   const t = useT();
   const [title, setTitle] = useState("");
-  const [cwd, setCwd] = useState("");
+  const [cwd, setCwd] = useState(initialCwd ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [dragging, setDragging] = useState(false);
   const nativeShell = isNativeDesktopShell();
 
+  useEffect(() => {
+    const nextCwd = initialCwd?.trim() ?? "";
+    setCwd(nextCwd);
+    setTitle("");
+    setError(undefined);
+  }, [initialCwd]);
+
   function setFolder(path: string) {
     const next = path.trim();
     if (!next) return;
     setCwd(next);
-    if (!title.trim()) setTitle(projectName(next));
     setError(undefined);
   }
 
@@ -78,7 +57,6 @@ export function CreateSessionForm({
     setError(undefined);
     try {
       await onCreate(effectiveCwd, title.trim() || undefined);
-      rememberRecentCwd(effectiveCwd);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : t("create.error.failed"),
@@ -139,18 +117,18 @@ export function CreateSessionForm({
       }}
     >
       <label className="grid gap-1.5 text-[12px] font-bold text-ink-soft">
-        {t("create.projectName")}
+        {t("create.sessionTitle")}
         <input
           autoFocus
           className="rounded-lg border border-line bg-surface-raised px-2.5 py-2 text-ink focus:border-blue/50 focus:ring-2 focus:ring-blue/25 focus:outline-none"
           disabled={submitting}
           onChange={(event) => setTitle(event.target.value)}
-          placeholder={t("create.projectNamePlaceholder")}
+          placeholder={t("create.titlePlaceholder")}
           value={title}
         />
       </label>
       <div className="grid gap-1.5 text-[12px] font-bold text-ink-soft">
-        {t("create.sourceFolder")}
+        {t("create.workingDirectory")}
         <div
           aria-label={t("create.dropFolder")}
           className={`grid gap-3 rounded-xl border-2 border-dashed p-4 transition-colors ${
@@ -179,7 +157,7 @@ export function CreateSessionForm({
             <div className="min-w-0 flex-1">
               <strong className="block truncate text-[12px] font-extrabold text-ink">
                 {effectiveCwd
-                  ? projectName(effectiveCwd)
+                  ? directoryName(effectiveCwd)
                   : dragging
                     ? t("create.dropFolderActive")
                     : t("create.folderEmpty")}
@@ -231,7 +209,7 @@ export function CreateSessionForm({
           disabled={submitting || !effectiveCwd}
           type="submit"
         >
-          {submitting ? t("create.creating") : t("create.submitProject")}
+          {submitting ? t("create.creating") : t("create.submitSession")}
         </button>
       </div>
     </form>

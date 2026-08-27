@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useT } from "../../lib/i18n";
 
@@ -76,7 +77,7 @@ export function Dialog({
     ? "animate-[fade-out_170ms_ease_both]"
     : "animate-[scrim-in_200ms_ease_both]";
 
-  return (
+  return createPortal(
     <div
       aria-hidden={closing}
       className="fixed inset-0 z-30 grid place-items-center p-4"
@@ -120,6 +121,7 @@ export function Dialog({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

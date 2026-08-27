@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Icon, IconButton } from "../../components/Icon";
+import { OverflowMarquee } from "../../components/OverflowMarquee";
 import { useT } from "../../lib/i18n";
 import { Tooltip } from "../../components/ui/Tooltip";
 import type { SessionInfo } from "../../lib/runtimeBridge";
@@ -15,6 +16,7 @@ type SessionHeaderProps = {
   onOpenSettings: () => void;
   onStop: () => void;
   onOpenMobileMenu: () => void;
+  onRename?: () => void;
 };
 
 /** 工作区顶部栏：会话标题、状态徽章与高频操作（主题/设置/停止/详情）。 */
@@ -29,6 +31,7 @@ export function SessionHeader({
   onOpenSettings,
   onStop,
   onOpenMobileMenu,
+  onRename,
 }: SessionHeaderProps) {
   const t = useT();
   // 停止两段式：第一次点击进入 3 秒确认窗口，再点才真正取消，防误触。
@@ -39,13 +42,13 @@ export function SessionHeader({
     return () => window.clearTimeout(timer);
   }, [stopArming]);
   return (
-    <header className="relative flex min-h-[74px] items-center justify-between gap-4 border-b border-line bg-surface/75 px-7 py-3.5 backdrop-blur-xl max-[720px]:min-h-[65px] max-[720px]:gap-2.5 max-[720px]:px-3.5 max-[720px]:pt-[max(10px,env(safe-area-inset-top))] max-[720px]:pb-2.5">
+    <header className="relative flex min-h-[74px] min-w-0 items-center justify-between gap-4 overflow-hidden border-b border-line bg-surface/75 px-7 py-3.5 backdrop-blur-xl max-[720px]:min-h-[65px] max-[720px]:gap-2.5 max-[720px]:px-3.5 max-[720px]:pt-[max(10px,env(safe-area-inset-top))] max-[720px]:pb-2.5">
       {/* 顶部品牌渐变细条：与用户消息/发送按钮统一视觉语言。 */}
       <span
         aria-hidden="true"
         className="absolute inset-x-0 top-0 h-[2px] bg-[linear-gradient(90deg,#5b67f1,#6d5df0_55%,#7c54e8)] opacity-80"
       />
-      <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <IconButton
           className="hidden max-[720px]:inline-grid"
           label={t("header.openSidebar")}
@@ -53,11 +56,26 @@ export function SessionHeader({
         >
           <Icon name="message" />
         </IconButton>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h1 className="m-0 min-w-0 basis-auto flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[15px] font-extrabold tracking-tight text-ink max-[720px]:max-w-none max-[720px]:text-[13px]">
-              {selected?.title || t("header.overview")}
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="group flex min-w-0 items-center gap-2.5">
+            <h1 className="m-0 min-w-0 flex-1 overflow-hidden text-[15px] font-extrabold tracking-tight text-ink max-[720px]:text-[13px]">
+              <OverflowMarquee
+                endEllipsis
+                text={selected?.title || t("header.overview")}
+              />
             </h1>
+            {selected && onRename && (
+              <Tooltip label={t("sidebar.rename")}>
+                <IconButton
+                  className="shrink-0"
+                  disabled={syncing}
+                  label={t("sidebar.rename")}
+                  onClick={onRename}
+                >
+                  <Icon name="pencil" size={14} />
+                </IconButton>
+              </Tooltip>
+            )}
             {selected && (
               <span
                 aria-live="polite"
@@ -101,7 +119,7 @@ export function SessionHeader({
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-1 max-[720px]:gap-px">
+      <div className="flex shrink-0 items-center gap-1 max-[720px]:gap-px">
         <Tooltip label={t("header.toggleTheme")}>
           <IconButton
             label={

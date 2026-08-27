@@ -225,17 +225,27 @@ describe("createSessionActions", () => {
     expect(h.loadSessions).toHaveBeenCalled();
   });
 
-  it("renames the session title", async () => {
+  it("renames the session title without clearing the transcript", async () => {
     const h = createHarness();
     h.scopeRef.current = { attach: 1, sessionId: "s1" };
+    h.setActive((value) => ({
+      ...value,
+      snapshot: {
+        ...snapshot(),
+        messages: [{ role: "user", content: "hello" }],
+      },
+    }));
     h.rpc.mockResolvedValueOnce(snapshot({ title: "新标题" }));
 
-    await h.actions.rename("新标题");
+    await expect(h.actions.rename("新标题")).resolves.toBe(true);
 
     expect(h.rpc).toHaveBeenCalledWith("session.update", {
       session_id: "s1",
       title: "新标题",
     });
+    expect(h.getActive().snapshot?.messages).toEqual([
+      { role: "user", content: "hello" },
+    ]);
     expect(h.toast).toHaveBeenCalledWith("success", "会话标题已更新");
   });
 
@@ -251,9 +261,25 @@ describe("createSessionActions", () => {
     expect(h.toast).toHaveBeenCalledWith("info", "已离开当前会话");
   });
 
-  it("removes a session after confirm and attaches to the next one", async () => {
-    vi.stubGlobal("window", { confirm: vi.fn(() => true) });
+  it("deletes another session without detaching the current one", async () => {
     const h = createHarness();
+    h.scopeRef.current = { attach: 1, sessionId: "s1" };
+    h.select("s1");
+    h.rpc.mockResolvedValueOnce({ deleted: true });
+    h.loadSessions.mockResolvedValueOnce([{ id: "s1" }]);
+
+    await h.actions.remove("s2");
+
+    expect(h.rpc).toHaveBeenCalledWith("session.delete", { session_id: "s2" });
+    expect(h.rpc).not.toHaveBeenCalledWith("session.detach", {});
+    expect(h.scopeRef.current?.sessionId).toBe("s1");
+    expect(h.setSelectedId).not.toHaveBeenCalled();
+    expect(h.toast).toHaveBeenCalledWith("success", "会话已删除");
+  });
+
+  it("removes the current session and attaches to the next one", async () => {
+    const h = createHarness();
+    h.scopeRef.current = { attach: 1, sessionId: "s1" };
     h.rpc.mockResolvedValueOnce({ status: "detached" });
     h.rpc.mockResolvedValueOnce({ deleted: true });
     h.loadSessions.mockResolvedValueOnce([{ id: "next-1" }]);
@@ -273,11 +299,54 @@ describe("createSessionActions", () => {
     expect(h.toast).toHaveBeenCalledWith("success", "会话已删除");
   });
 
-  it("skips removal when confirm is cancelled", async () => {
-    vi.stubGlobal("window", { confirm: vi.fn(() => false) });
+  it("deletes every Runtime session in a workdir and keeps an outside current session", async () => {
     const h = createHarness();
-    await h.actions.remove("s1");
-    expect(h.rpc).not.toHaveBeenCalled();
+    h.scopeRef.current = { attach: 1, sessionId: "outside" };
+    h.rpc.mockResolvedValueOnce({
+      sessions: [{ id: "workdir-1" }, { id: "workdir-2" }],
+    });
+    h.rpc.mockResolvedValueOnce({ deleted: true });
+    h.rpc.mockResolvedValueOnce({ deleted: true });
+    h.loadSessions.mockResolvedValueOnce([{ id: "outside" }]);
+
+    await expect(h.actions.deleteWorkdirSessions("/project")).resolves.toBe(
+      true,
+    );
+
+    expect(h.rpc).toHaveBeenNthCalledWith(1, "session.list", {
+      cwd: "/project",
+    });
+    expect(h.rpc).toHaveBeenNthCalledWith(2, "session.delete", {
+      session_id: "workdir-1",
+    });
+    expect(h.rpc).toHaveBeenNthCalledWith(3, "session.delete", {
+      session_id: "workdir-2",
+    });
+    expect(h.rpc).not.toHaveBeenCalledWith("session.detach", {});
+    expect(h.toast).toHaveBeenCalledWith("success", "工作目录下的会话已删除");
+  });
+
+  it("detaches and reattaches when deleting the current workdir sessions", async () => {
+    const h = createHarness();
+    h.scopeRef.current = { attach: 1, sessionId: "project-1" };
+    h.rpc.mockResolvedValueOnce({ sessions: [{ id: "project-1" }] });
+    h.rpc.mockResolvedValueOnce({ status: "detached" });
+    h.rpc.mockResolvedValueOnce({ deleted: true });
+    h.loadSessions.mockResolvedValueOnce([{ id: "next-1" }]);
+    h.rpc.mockResolvedValueOnce(snapshot({ id: "next-1" }));
+
+    await expect(h.actions.deleteWorkdirSessions("/project")).resolves.toBe(
+      true,
+    );
+
+    expect(h.rpc).toHaveBeenNthCalledWith(1, "session.list", {
+      cwd: "/project",
+    });
+    expect(h.rpc).toHaveBeenNthCalledWith(2, "session.detach", {});
+    expect(h.rpc).toHaveBeenNthCalledWith(3, "session.delete", {
+      session_id: "project-1",
+    });
+    expect(h.scopeRef.current?.sessionId).toBe("next-1");
   });
 
   it("sets awaitingRun optimistically when sending", async () => {

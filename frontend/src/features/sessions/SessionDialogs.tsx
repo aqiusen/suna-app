@@ -7,10 +7,11 @@ type SessionDialogsProps = {
   onEditingTitleChange: (open: boolean) => void;
   titleDraft: string;
   onTitleDraftChange: (value: string) => void;
-  onRename: () => void;
+  onRename: () => void | Promise<void>;
   createOpen: boolean;
   onCreateOpenChange: (open: boolean) => void;
   onCreate: (cwd: string, title?: string) => Promise<void>;
+  createInitialCwd?: string;
 };
 
 /** 会话级对话框：重命名与新建会话。 */
@@ -23,6 +24,7 @@ export function SessionDialogs({
   createOpen,
   onCreateOpenChange,
   onCreate,
+  createInitialCwd,
 }: SessionDialogsProps) {
   const t = useT();
   return (
@@ -37,7 +39,7 @@ export function SessionDialogs({
           className="grid gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            onRename();
+            void onRename();
           }}
         >
           <label className="grid gap-1.5 text-[12px] font-bold text-ink-soft">
@@ -69,10 +71,11 @@ export function SessionDialogs({
       <Dialog
         open={createOpen}
         onOpenChange={onCreateOpenChange}
-        title={t("create.createProject")}
+        title={t("create.title")}
         description={t("create.folderHint")}
       >
         <CreateSessionForm
+          initialCwd={createInitialCwd}
           onCancel={() => onCreateOpenChange(false)}
           onCreate={onCreate}
         />

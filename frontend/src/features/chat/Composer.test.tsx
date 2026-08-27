@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../lib/i18n";
-import { Composer } from "./Composer";
+import { buildAttachmentParts, Composer } from "./Composer";
 
 vi.mock("../../lib/desktopGateway", () => ({
   isNativeDesktopShell: () => true,
@@ -165,5 +165,69 @@ describe("Composer + 附件面板", () => {
     fireEvent.click(plusButton);
     // 收起后 dropdown 消失，不再有 Image URL 菜单项。
     expect(screen.queryByRole("button", { name: /image url/i })).toBeNull();
+  });
+});
+
+describe("附件意图组装", () => {
+  it("为目录和普通文件生成明确的文本意图", () => {
+    expect(
+      buildAttachmentParts(
+        "请处理它们",
+        [],
+        [
+          { path: "/tmp/project", name: "project", is_dir: true },
+          { path: "/tmp/project/README.md", name: "README.md" },
+        ],
+      ),
+    ).toEqual([
+      { type: "text", text: "请处理它们" },
+      {
+        type: "text",
+        text: [
+          "The user attached the following resources. Use the paths as user-provided references and use file tools as needed:",
+          "- Work in this directory: /tmp/project",
+          "- Read and analyze this file: /tmp/project/README.md",
+        ].join("\n"),
+      },
+    ]);
+  });
+
+  it("为图片生成意图并保留图片 part", () => {
+    expect(
+      buildAttachmentParts(
+        "",
+        ["https://example.com/image.png"],
+        [
+          {
+            path: "/tmp/screenshot.png",
+            name: "screenshot.png",
+            mime_type: "image/png",
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        type: "text",
+        text: [
+          "The user attached the following resources. Use the paths as user-provided references and use file tools as needed:",
+          "- Inspect this image URL: https://example.com/image.png",
+          "- Inspect this image: /tmp/screenshot.png",
+        ].join("\n"),
+      },
+      {
+        type: "image",
+        source: { kind: "url", url: "https://example.com/image.png" },
+      },
+      {
+        type: "image",
+        source: {
+          kind: "path",
+          path: "/tmp/screenshot.png",
+          name: "screenshot.png",
+          mime_type: "image/png",
+          size: undefined,
+        },
+      },
+    ]);
   });
 });

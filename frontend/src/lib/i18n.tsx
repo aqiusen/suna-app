@@ -97,6 +97,10 @@ const DICT: Dict = {
   "sidebar.rename": { zh: "重命名会话", en: "Rename session" },
   "sidebar.detach": { zh: "分离会话", en: "Detach session" },
   "sidebar.delete": { zh: "删除会话", en: "Delete session" },
+  "sidebar.deleteIdleOnly": {
+    zh: "会话正在进行中，请先停止后再删除",
+    en: "Stop the session before deleting it",
+  },
   "sidebar.sessionActions": { zh: "会话操作", en: "Session actions" },
   "sidebar.untitled": { zh: "未命名会话", en: "Untitled session" },
   "sidebar.opening": { zh: "正在打开…", en: "Opening…" },
@@ -105,30 +109,12 @@ const DICT: Dict = {
     zh: "加入正在运行的会话",
     en: "Join running session",
   },
-  "project.edit": { zh: "编辑项目", en: "Edit project" },
-  "project.editTitle": { zh: "编辑项目", en: "Edit project" },
-  "project.more": { zh: "项目操作", en: "Project actions" },
-  "project.name": { zh: "项目名称", en: "Project name" },
-  "project.sourceFolders": { zh: "源文件夹", en: "Source folders" },
-  "project.sourceFolder": { zh: "源文件夹", en: "Source folder" },
-  "project.folderPlaceholder": {
-    zh: "输入文件夹路径",
-    en: "Enter a folder path",
-  },
-  "project.addFolder": { zh: "添加文件夹", en: "Add folder" },
-  "project.removeFolder": { zh: "移除文件夹", en: "Remove folder" },
-  "project.remove": { zh: "移除本地项目", en: "Remove local project" },
-  "project.removeConfirm": {
-    zh: "移除这个本地项目？不会删除本地文件或 Runtime 会话。",
-    en: "Remove this local project? Local files and Runtime sessions will stay untouched.",
-  },
-  "project.error.required": {
-    zh: "请输入项目名称并至少保留一个源文件夹。",
-    en: "Enter a project name and keep at least one source folder.",
-  },
-  "project.error.folder": {
-    zh: "无法选择文件夹，请重试。",
-    en: "The folder could not be selected. Try again.",
+  "group.more": { zh: "目录操作", en: "Directory actions" },
+  "group.newSession": { zh: "新建会话", en: "New session" },
+  "group.delete": { zh: "删除此目录会话", en: "Delete directory sessions" },
+  "group.deleteConfirm": {
+    zh: "删除此工作目录下的所有 Runtime 会话？目录中的文件不会被删除，此操作不可撤销。",
+    en: "Delete all Runtime sessions in this directory? Files will stay untouched. This cannot be undone.",
   },
   "session.status.idle": { zh: "空闲", en: "Idle" },
   "session.status.running": { zh: "正在运行", en: "Running" },
@@ -483,19 +469,7 @@ const DICT: Dict = {
   "waiting.go": { zh: "去看看", en: "Go" },
   "waiting.dismiss": { zh: "忽略等待通知", en: "Dismiss waiting notice" },
   // 新建任务对话框
-  "create.title": { zh: "新建任务", en: "New task" },
-  "create.searchProjects": { zh: "搜索项目…", en: "Search projects…" },
-  "create.noProjects": {
-    zh: "没有找到匹配的项目。",
-    en: "No matching projects.",
-  },
-  "create.projectLabel": { zh: "选择工作目录", en: "Choose working directory" },
-  "create.cwdPlaceholder": {
-    zh: "输入工作目录路径…",
-    en: "Enter a directory path…",
-  },
-  "create.titleLabel": { zh: "任务标题（可选）", en: "Task title (optional)" },
-  "create.create": { zh: "创建", en: "Create" },
+  "create.title": { zh: "新建会话", en: "New session" },
   "create.cancel": { zh: "取消", en: "Cancel" },
   // 设置各 Tab 高频
   "settings.save": { zh: "保存", en: "Save" },
@@ -683,28 +657,16 @@ const DICT: Dict = {
     en: "Leave empty to revert to untitled.",
   },
   "create.sessionTitle": { zh: "会话标题", en: "Session title" },
-  "create.createTask": { zh: "新建任务", en: "New task" },
-  "create.desc": {
-    zh: "选择项目目录，Suna 将在此目录内执行任务。",
-    en: "Choose a project directory; Suna will work inside it.",
-  },
   "create.error.required": {
-    zh: "请选择或输入一个项目目录。",
-    en: "Choose or enter a project directory.",
+    zh: "请选择或输入一个工作目录。",
+    en: "Choose or enter a working directory.",
   },
   "create.error.failed": {
     zh: "无法创建会话。",
     en: "Failed to create session.",
   },
-  "create.project": { zh: "项目", en: "Project" },
-  "create.createProject": { zh: "创建项目", en: "Create project" },
-  "create.submitProject": { zh: "创建项目", en: "Create project" },
-  "create.projectName": { zh: "项目名称", en: "Project name" },
-  "create.projectNamePlaceholder": {
-    zh: "未命名项目",
-    en: "Untitled project",
-  },
-  "create.sourceFolder": { zh: "源文件夹", en: "Source folder" },
+  "create.workingDirectory": { zh: "工作目录", en: "Working directory" },
+  "create.submitSession": { zh: "创建会话", en: "Create session" },
   "create.pickFolder": { zh: "选择文件夹", en: "Choose folder" },
   "create.dropFolder": { zh: "拖放文件夹到这里", en: "Drop a folder here" },
   "create.dropFolderActive": {
@@ -725,9 +687,6 @@ const DICT: Dict = {
     zh: "/Users/me/project",
     en: "/Users/me/project",
   },
-  "create.manualPath": { zh: "手动输入新路径…", en: "Enter a new path…" },
-  "create.newPath": { zh: "新路径", en: "New path" },
-  "create.titleOptional": { zh: "标题（可选）", en: "Title (optional)" },
   "create.titlePlaceholder": { zh: "新任务", en: "New task" },
   "create.creating": { zh: "正在创建…", en: "Creating…" },
   // 状态条
@@ -834,6 +793,18 @@ const DICT: Dict = {
     en: "Delete this session? This cannot be undone.",
   },
   "action.deleted": { zh: "会话已删除", en: "Session deleted" },
+  "action.workdirDeleted": {
+    zh: "工作目录下的会话已删除",
+    en: "Workdir sessions deleted",
+  },
+  "action.workdirEmptyDeleted": {
+    zh: "工作目录下没有会话",
+    en: "No sessions in this workdir",
+  },
+  "action.workdirDeleteFailed": {
+    zh: "无法完整删除工作目录下的会话，可能有会话正在运行或被其他客户端使用。",
+    en: "Could not delete all workdir sessions. Some may be running or used by another client.",
+  },
   "action.deleteFailed": {
     zh: "无法删除会话。",
     en: "Failed to delete session.",

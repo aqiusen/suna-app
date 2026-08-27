@@ -60,3 +60,12 @@ describe("SessionHeader 停止两段式", () => {
     expect(onStop).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("SessionHeader 重命名", () => {
+  it("点击编辑按钮会请求重命名当前会话", () => {
+    const onRename = vi.fn();
+    renderHeader({ onRename, running: false });
+    fireEvent.click(screen.getByRole("button", { name: /rename session/i }));
+    expect(onRename).toHaveBeenCalledTimes(1);
+  });
+});

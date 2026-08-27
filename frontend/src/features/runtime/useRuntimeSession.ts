@@ -375,16 +375,12 @@ export function useRuntimeSession() {
     isSessionActionsFrozen: () => syncing || !selectedId || !scopeRef.current,
     getSelectedId: () => selectedIdRef.current,
     isSyncing: () => syncingRef.current,
-    canDelete: () => cap("session"),
+    canDelete: () => cap("session.delete"),
   });
 
   // Runtime 0.3+ 的 session.updated 会全局广播轻量 Session Catalog 增量
-  // （包括未 attach 的客户端），因此无需定时轮询：连接建立后由
-  // session.list 取初始快照，之后靠 onNotification 里的 mergeSession 增量更新。
-  useEffect(() => {
-    if (!connected) return;
-    void loadSessions().catch(() => undefined);
-  }, [connected, loadSessions]);
+  // （包括未 attach 的客户端），因此无需定时轮询：initialize/restore 已经
+  // 取过初始快照，之后靠 onNotification 里的 mergeSession 增量更新。
   useEffect(() => {
     if (!connected) return;
     void rpc("session.usage", {})
@@ -409,7 +405,7 @@ export function useRuntimeSession() {
     ],
     [active.pendingUsers, active.snapshot?.messages],
   );
-  const canDelete = cap("session");
+  const canDelete = cap("session.delete");
   const canConfig = cap("config");
   const current = active.snapshot?.current_run;
   const running =
