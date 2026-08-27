@@ -5,3 +5,6 @@ yarn.lock
 
 # 构建产物
 dist/
+
+# Wails 绑定与运行时由 Wails 自动生成
+wailsjs/
