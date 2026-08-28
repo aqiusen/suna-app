@@ -16,7 +16,7 @@ const session: SessionInfo = {
   client_count: 0,
 };
 
-function renderSidebar() {
+function renderSidebar(onRequestCreate = vi.fn()) {
   const onDelete = vi.fn();
   const onRename = vi.fn();
   render(
@@ -29,7 +29,7 @@ function renderSidebar() {
           onJoinActive={() => undefined}
           onReconnect={() => undefined}
           onRename={onRename}
-          onRequestCreate={() => undefined}
+          onRequestCreate={onRequestCreate}
           onSelect={() => undefined}
           selectedId="s1"
           sessions={[session]}
@@ -37,7 +37,7 @@ function renderSidebar() {
       </TooltipProvider>
     </LocaleProvider>,
   );
-  return { onDelete, onRename };
+  return { onDelete, onRename, onRequestCreate };
 }
 
 describe("SessionSidebar 会话操作", () => {
@@ -73,5 +73,11 @@ describe("SessionSidebar 会话操作", () => {
     const confirms = screen.getAllByRole("button", { name: /delete session/i });
     fireEvent.click(confirms[confirms.length - 1]);
     expect(onDelete).toHaveBeenCalledWith("s1");
+  });
+
+  it("点击新建按钮不会把鼠标事件当作初始目录传出", () => {
+    const { onRequestCreate } = renderSidebar();
+    fireEvent.click(screen.getByRole("button", { name: /new task/i }));
+    expect(onRequestCreate).toHaveBeenCalledWith();
   });
 });

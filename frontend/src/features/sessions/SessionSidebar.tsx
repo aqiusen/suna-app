@@ -195,7 +195,7 @@ export function SessionSidebar({
           <IconButton
             disabled={disabled}
             label={t("sidebar.newTask")}
-            onClick={onRequestCreate}
+            onClick={() => onRequestCreate()}
           >
             <Icon name="plus" />
           </IconButton>
