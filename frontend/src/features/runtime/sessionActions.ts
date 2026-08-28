@@ -113,31 +113,13 @@ export function createSessionActions({
         if (!activeScopeMatches(scope))
           throw new Error(t("action.sessionSwitched"));
         await rpc("agent.sendMessage", { client_msg_id: id, parts });
-        // idle 会话没有 run_id；发送成功后立即重新 attach，让后续
-        // run-only 事件拥有权威作用域。
-        const snapshot = await rpc("session.attach", {
-          session_id: scope.sessionId,
-        });
         if (!activeScopeMatches(scope)) return;
-        scopeRef.current = {
-          ...scope,
-          runId: snapshot.current_run?.run_id,
-        };
         setActive((value) => ({
           ...value,
-          snapshot: {
-            ...snapshot,
-            messages: snapshot.messages ?? value.snapshot?.messages,
-          },
-          // 新回合开始：清空上一轮的工具卡叙事（历史工具细节由
-          // toolSummary 统计兜底，避免 flow 无限累积），只恢复
-          // 权威 buffer（若 Runtime 已开始流式输出）。
-          flow: flowFromSnapshot(snapshot),
-          // 发送前的 run 属于旧快照；由新的权威 current_run 决定控制权。
+          // run_id 会由第一条 agent.run / agent.delta 绑定到 scope。这里不能
+          // reattach：该快照会覆盖刚到达的流式文本，尤其会丢掉最终回答。
           run: undefined,
-          toolSummary: snapshot.tool_summary ?? value.toolSummary,
         }));
-        mergeSession(snapshot.session);
       });
     } catch (reason) {
       setActive((value) => ({

@@ -17,12 +17,13 @@ import type {
   SessionInfo,
   UsagePeriod,
 } from "../../lib/runtimeBridge";
+import { RuntimeBridgeClient } from "../../lib/runtimeBridge";
 import { useRuntimeBridge } from "./useRuntimeBridge";
 import { useDeltaQueue } from "./useDeltaQueue";
 import { createNotificationHandler } from "./runtimeEvents";
 import { createSessionActions } from "./sessionActions";
 import { blankActive, flowFromSnapshot } from "./sessionState";
-import type { ActiveData } from "./sessionState";
+import type { ActiveData, Scope } from "./sessionState";
 
 /**
  * 会话工作区核心状态 hook：管理 Runtime bridge、会话目录、当前 attach、
@@ -32,7 +33,7 @@ export function useRuntimeSession() {
   const { toast } = useToast();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
-  const [active, setActive] = useState<ActiveData>(blankActive);
+  const [active, setActiveState] = useState<ActiveData>(blankActive);
   const [error, setError] = useState<string>();
   const [usage, setUsage] = useState<UsagePeriod>();
   const [config, setConfig] = useState<RuntimeConfig>();
@@ -42,6 +43,12 @@ export function useRuntimeSession() {
   const [handoffRole, setHandoffRole] = useState<"host" | "guest">("host");
   const hostSessionIdsRef = useRef<Set<string>>(new Set());
   const selectedIdRef = useRef<string | undefined>(undefined);
+  const sessionsRef = useRef<SessionInfo[]>([]);
+  const activeRef = useRef<ActiveData>(blankActive());
+  const backgroundFlowIdRef = useRef(0);
+  // 仅保存当前页面生命周期内每个会话的渲染投影。Runtime 仍是消息、run
+  // 与工具状态的唯一权威；缓存只让用户切回时保留已看到的时间线和滚动上下文。
+  const sessionViewsRef = useRef(new Map<string, ActiveData>());
   const restoreRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const attachIntentRef = useRef(0);
   const restoreIntentRef = useRef(0);
@@ -49,6 +56,10 @@ export function useRuntimeSession() {
   const sessionsRevisionRef = useRef(0);
   const attachQueueRef = useRef(Promise.resolve());
   const syncingRef = useRef(false);
+  // 一个 Runtime connection 只能 attach 一个 session；切换前为仍在运行的
+  // 旧 session 保留独立后台 connection，避免 Runtime 把切换误判为最后客户端离开。
+  const backgroundClientsRef = useRef(new Map<string, RuntimeBridgeClient>());
+  const backgroundClientPromisesRef = useRef(new Map<string, Promise<void>>());
   const scopeRef = useRef<
     | {
         attach: number;
@@ -58,10 +69,27 @@ export function useRuntimeSession() {
     | undefined
   >(undefined);
 
+  // 切换可连续发生在 React effect 刷新之前；状态入队时同步更新 ref 和
+  // session 缓存，保证下一次切换取得的是最新流，而不是上一个 render 的副本。
+  const setActive = useCallback<Dispatch<SetStateAction<ActiveData>>>(
+    (value) => {
+      const current = activeRef.current;
+      const next = typeof value === "function" ? value(current) : value;
+      activeRef.current = next;
+      const id = next.snapshot?.session.id ?? selectedIdRef.current;
+      if (id && (next.snapshot || next.flow.length > 0))
+        sessionViewsRef.current.set(id, next);
+      setActiveState(next);
+    },
+    [],
+  );
+
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
-
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
   const setRuntimeConfig = useCallback<
     Dispatch<SetStateAction<RuntimeConfig | undefined>>
   >((value) => {
@@ -160,8 +188,62 @@ export function useRuntimeSession() {
       mergeMcp,
       mergeSession,
       queueDelta,
+      setActive,
       setRuntimeConfig,
     ],
+  );
+  const createBackgroundNotificationHandler = useCallback(
+    (sessionId: string) => {
+      let scope: Scope = { attach: 0, sessionId };
+      const setView: Dispatch<SetStateAction<ActiveData>> = (value) => {
+        const current = sessionViewsRef.current.get(sessionId) ?? blankActive();
+        sessionViewsRef.current.set(
+          sessionId,
+          typeof value === "function" ? value(current) : value,
+        );
+      };
+      return createNotificationHandler({
+        setActive: setView,
+        setConfig: setRuntimeConfig,
+        queueDelta: (kind, content, runId) => {
+          if (runId && !scope.runId) scope = { ...scope, runId };
+          if (runId && scope.runId !== runId) return;
+          setView((value) => {
+            const flow = [...value.flow];
+            const last = flow.at(-1);
+            if (
+              last &&
+              last.kind === kind &&
+              !last.done &&
+              (last.kind === "assistant" || last.kind === "reasoning")
+            ) {
+              flow[flow.length - 1] = {
+                ...last,
+                text: last.text + content,
+              };
+            } else {
+              flow.push({
+                kind,
+                id: ++backgroundFlowIdRef.current,
+                text: content,
+                done: false,
+              });
+            }
+            return { ...value, flow };
+          });
+        },
+        flushDeltas: () => undefined,
+        acceptsRun: (runId) => !runId || !scope.runId || scope.runId === runId,
+        acceptsSession: (id) => id === sessionId,
+        mergeSession,
+        markSessionIdle: () => markSessionIdle(sessionId),
+        mergeMcp,
+        getScope: () => scope,
+        isSyncing: () => false,
+        getSelectedId: () => sessionId,
+      });
+    },
+    [markSessionIdle, mergeMcp, mergeSession, setRuntimeConfig],
   );
   const onEventError = useCallback(
     (reason: Error) => setError(reason.message),
@@ -214,6 +296,86 @@ export function useRuntimeSession() {
     },
     [],
   );
+  const keepBackgroundAttachment = useCallback(
+    (sessionId: string) => {
+      const current = backgroundClientsRef.current.get(sessionId);
+      if (current?.currentConnection()) return Promise.resolve();
+      const pending = backgroundClientPromisesRef.current.get(sessionId);
+      if (pending) return pending;
+
+      const work = (async () => {
+        const client = new RuntimeBridgeClient({
+          baseUrl: getGatewayBaseUrl(),
+          desktopToken: getDesktopToken(),
+        });
+        backgroundClientsRef.current.set(sessionId, client);
+        try {
+          await client.connect();
+          // 先打开事件流再 attach，避免 attach 成功到 SSE 建立之间丢失运行事件。
+          const handleNotification =
+            createBackgroundNotificationHandler(sessionId);
+          client.subscribe(
+            (notification, receivedAt) => {
+              // 每个后台 bridge 都有独立的渲染投影。它只存在本页内存中，
+              // 切回时仍以 Runtime attach 快照校验 run_id 和消息历史。
+              handleNotification(notification, receivedAt);
+              if (
+                notification.method === "agent.run" &&
+                (notification.params.state === "done" ||
+                  notification.params.state === "failed" ||
+                  notification.params.state === "cancelled")
+              ) {
+                // 运行结束后不再占用一个 attached client。必须在事件回调中
+                // 释放，不能只依赖用户再次打开该会话，否则 idle runtime 永远
+                // 被后台 bridge 保活。
+                markSessionIdle(sessionId);
+                backgroundClientsRef.current.delete(sessionId);
+                void client.disconnect().catch(() => undefined);
+              }
+            },
+            (reason) => setError(reason.message),
+            async () => {
+              // SSE 重连会创建新的 Gateway connection，必须重新 attach。
+              await client.rpc("session.attach", { session_id: sessionId });
+            },
+          );
+          await client.rpc("session.attach", { session_id: sessionId });
+        } catch (reason) {
+          backgroundClientsRef.current.delete(sessionId);
+          await client.disconnect().catch(() => undefined);
+          throw reason;
+        }
+      })();
+      backgroundClientPromisesRef.current.set(sessionId, work);
+      void work.then(
+        () => {
+          if (backgroundClientPromisesRef.current.get(sessionId) === work)
+            backgroundClientPromisesRef.current.delete(sessionId);
+        },
+        () => {
+          if (backgroundClientPromisesRef.current.get(sessionId) === work)
+            backgroundClientPromisesRef.current.delete(sessionId);
+        },
+      );
+      return work;
+    },
+    [createBackgroundNotificationHandler, markSessionIdle],
+  );
+  const releaseBackgroundAttachment = useCallback(async (sessionId: string) => {
+    const pending = backgroundClientPromisesRef.current.get(sessionId);
+    if (pending) await pending.catch(() => undefined);
+    const client = backgroundClientsRef.current.get(sessionId);
+    backgroundClientsRef.current.delete(sessionId);
+    if (client) await client.disconnect();
+  }, []);
+  useEffect(
+    () => () => {
+      for (const client of backgroundClientsRef.current.values())
+        void client.disconnect();
+      backgroundClientsRef.current.clear();
+    },
+    [],
+  );
   const activeScopeMatches = useCallback(
     (scope: NonNullable<typeof scopeRef.current>) => {
       const currentScope = scopeRef.current;
@@ -245,6 +407,32 @@ export function useRuntimeSession() {
 
   const attach = useCallback(
     (id: string, requireActive = false) => {
+      // 重复选中当前会话只是 UI 操作，不得重新 attach。attach 会用快照替换
+      // 本地流并清空 delta 队列，运行中重复调用会丢失最终回答。
+      if (
+        !requireActive &&
+        !syncingRef.current &&
+        scopeRef.current?.sessionId === id
+      ) {
+        setSelectedId(id);
+        return Promise.resolve();
+      }
+      const previousSessionId = scopeRef.current?.sessionId;
+      const previousSession = sessionsRef.current.find(
+        (session) => session.id === previousSessionId,
+      );
+      const previousActive = activeRef.current;
+      const previousRunActive = Boolean(
+        previousSession?.status === "running" ||
+        previousSession?.status === "waiting" ||
+        previousSession?.status === "compacting" ||
+        previousActive.snapshot?.current_run?.status === "running" ||
+        previousActive.run?.state === "running" ||
+        previousActive.run?.state === "retrying" ||
+        previousActive.run?.state === "cancelling",
+      );
+      if (previousSessionId)
+        sessionViewsRef.current.set(previousSessionId, previousActive);
       const intent = ++attachIntentRef.current;
       resetQueuedDeltas();
       scopeRef.current = undefined;
@@ -254,6 +442,8 @@ export function useRuntimeSession() {
       setActive(blankActive());
       const work = queueSessionOperation(async () => {
         if (intent !== attachIntentRef.current) return;
+        if (previousSessionId && previousSessionId !== id && previousRunActive)
+          await keepBackgroundAttachment(previousSessionId);
         const snapshot = await rpc("session.attach", {
           session_id: id,
           ...(requireActive ? { require_active: true } : {}),
@@ -269,13 +459,24 @@ export function useRuntimeSession() {
         setSelectedId(id);
         // 判断当前会话中我的身份：我创建过的会话是 host，否则视为 guest。
         setHandoffRole(hostSessionIdsRef.current.has(id) ? "host" : "guest");
+        const cached = sessionViewsRef.current.get(id);
+        const restoreCachedFlow = canRestoreCachedFlow(cached, snapshot);
         setActive({
           snapshot,
-          flow: flowFromSnapshot(snapshot),
+          // 已结束 run 的 attach 快照不含 current_run；这不是新 run，不能
+          // 用空 flow 覆盖已经看到的完整回复。只有 Runtime 明确给出不同
+          // run_id 时才从快照重新恢复进行中的 buffer。
+          flow: restoreCachedFlow ? cached!.flow : flowFromSnapshot(snapshot),
           toolSummary: snapshot.tool_summary,
-          pendingUsers: [],
+          run: restoreCachedFlow ? cached?.run : undefined,
+          usage: restoreCachedFlow ? cached?.usage : undefined,
+          ask: restoreCachedFlow ? cached?.ask : undefined,
+          guard: restoreCachedFlow ? cached?.guard : undefined,
+          pendingUsers: cached?.pendingUsers ?? [],
+          awaitingRun: restoreCachedFlow ? cached?.awaitingRun : undefined,
         });
         mergeSession(snapshot.session);
+        await releaseBackgroundAttachment(id);
       });
       return work
         .catch((reason) => {
@@ -299,9 +500,12 @@ export function useRuntimeSession() {
     },
     [
       mergeSession,
+      keepBackgroundAttachment,
       queueSessionOperation,
       resetQueuedDeltas,
       rpc,
+      releaseBackgroundAttachment,
+      setActive,
       setSyncBoundary,
     ],
   );
@@ -337,7 +541,7 @@ export function useRuntimeSession() {
       )
         setSyncBoundary(false);
     }
-  }, [attach, loadSessions, resetQueuedDeltas, setSyncBoundary]);
+  }, [attach, loadSessions, resetQueuedDeltas, setActive, setSyncBoundary]);
   useEffect(() => {
     restoreRef.current = restore;
   }, [restore]);
@@ -456,6 +660,21 @@ export function useRuntimeSession() {
 }
 
 export type { RuntimeNotification };
+
+/**
+ * Runtime 在 run 结束后不再返回 current_run。此时应复用本页缓存的完整
+ * 叙事流；只有 attach 快照明确指向另一个 run 时，缓存才不再适用。
+ */
+export function canRestoreCachedFlow(
+  cached: ActiveData | undefined,
+  snapshot: NonNullable<ActiveData["snapshot"]>,
+) {
+  if (!cached?.flow.length) return false;
+  const cachedRunId =
+    cached.run?.run_id ?? cached.snapshot?.current_run?.run_id;
+  const snapshotRunId = snapshot.current_run?.run_id;
+  return !snapshotRunId || cachedRunId === snapshotRunId;
+}
 
 export function normalizeRuntimeConfig(
   value: RuntimeConfig | undefined,

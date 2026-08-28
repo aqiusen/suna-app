@@ -104,11 +104,6 @@ const DICT: Dict = {
   "sidebar.sessionActions": { zh: "会话操作", en: "Session actions" },
   "sidebar.untitled": { zh: "未命名会话", en: "Untitled session" },
   "sidebar.opening": { zh: "正在打开…", en: "Opening…" },
-  "sidebar.join": { zh: "加入", en: "Join" },
-  "sidebar.joinRunning": {
-    zh: "加入正在运行的会话",
-    en: "Join running session",
-  },
   "group.more": { zh: "目录操作", en: "Directory actions" },
   "group.newSession": { zh: "新建会话", en: "New session" },
   "group.delete": { zh: "删除此目录会话", en: "Delete directory sessions" },

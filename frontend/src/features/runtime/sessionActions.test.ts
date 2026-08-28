@@ -154,7 +154,7 @@ describe("createSessionActions", () => {
     expect(h.rpc).not.toHaveBeenCalled();
   });
 
-  it("sends a message, shows pending user message, then reattaches", async () => {
+  it("sends a message without replacing the active stream with an attach snapshot", async () => {
     const h = createHarness();
     h.scopeRef.current = { attach: 1, sessionId: "s1" };
     h.select("s1");
@@ -163,11 +163,7 @@ describe("createSessionActions", () => {
       snapshot: snapshot(),
       pendingUsers: [],
     }));
-    // session.create 校验后 send 的两个 RPC：sendMessage + attach。
     h.rpc.mockResolvedValueOnce({ status: "processing" });
-    h.rpc.mockResolvedValueOnce(
-      snapshot({ status: "running", id: "s1" }) as SessionSnapshot,
-    );
 
     await h.actions.send([{ type: "text", text: "你好" }]);
 
@@ -187,6 +183,9 @@ describe("createSessionActions", () => {
     expect((sendCall![1] as { parts: MessagePart[] }).parts).toEqual([
       { type: "text", text: "你好" },
     ]);
+    expect(h.rpc).not.toHaveBeenCalledWith("session.attach", {
+      session_id: "s1",
+    });
   });
 
   it("removes pending message when send fails", async () => {
@@ -361,8 +360,6 @@ describe("createSessionActions", () => {
           resolveSend = () => resolve({ ok: true });
         }),
     );
-    // sendMessage 成功后的 session.attach 也 mock。
-    h.rpc.mockResolvedValueOnce(snapshot({ id: "s1" }));
     const pending = h.actions.send([{ type: "text", text: "你好" }]);
     // 乐观更新已同步执行：awaitingRun=true、pendingUsers 含消息。
     expect(h.getActive().awaitingRun).toBe(true);

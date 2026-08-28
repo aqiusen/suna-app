@@ -9,7 +9,6 @@ export function SessionRow({
   disabled,
   joining,
   onDelete,
-  onJoinActive,
   onRename,
   onSelect,
   onTogglePin,
@@ -20,7 +19,6 @@ export function SessionRow({
   disabled: boolean;
   joining: boolean;
   onDelete?: (id: string) => void;
-  onJoinActive: (id: string) => void;
   onRename?: (id: string) => void;
   onSelect: (id: string) => void;
   onTogglePin?: () => void;
@@ -29,8 +27,6 @@ export function SessionRow({
   session: SessionInfo;
 }) {
   const t = useT();
-  const canJoin =
-    session.status === "running" && !selected && !disabled && !joining;
   const canDeleteSession = session.status === "idle";
   const hasQuickActions = Boolean(onTogglePin || onRename || onDelete);
   const actionPadding = hasQuickActions ? "pr-24" : "";
@@ -125,16 +121,6 @@ export function SessionRow({
             </Tooltip>
           )}
         </div>
-      )}
-      {canJoin && (
-        <button
-          aria-label={t("sidebar.joinRunning")}
-          className={`absolute top-1.5 ${hasQuickActions ? "right-24" : "right-2"} cursor-pointer rounded-md bg-blue px-2 py-1 text-[10px] font-bold text-white shadow-sm transition-colors duration-150 hover:bg-blue-strong`}
-          onClick={() => onJoinActive(session.id)}
-          type="button"
-        >
-          {t("sidebar.join")}
-        </button>
       )}
     </div>
   );

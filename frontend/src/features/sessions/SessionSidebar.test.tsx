@@ -26,7 +26,6 @@ function renderSidebar(onRequestCreate = vi.fn()) {
           connected
           onCreate={async () => undefined}
           onDelete={onDelete}
-          onJoinActive={() => undefined}
           onReconnect={() => undefined}
           onRename={onRename}
           onRequestCreate={onRequestCreate}

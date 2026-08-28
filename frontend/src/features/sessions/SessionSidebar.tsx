@@ -28,7 +28,6 @@ export function SessionSidebar({
   onCreate,
   onRequestCreate,
   onReconnect,
-  onJoinActive,
   onDelete,
   onRename,
   onDeleteWorkdir,
@@ -239,7 +238,6 @@ export function SessionSidebar({
                 joining={session.id === pendingId}
                 key={session.id}
                 onDelete={onDelete ? requestDelete : undefined}
-                onJoinActive={onJoinActive}
                 onRename={onRename}
                 onSelect={onSelect}
                 onTogglePin={() => togglePin(session.id)}
@@ -338,7 +336,6 @@ export function SessionSidebar({
                           joining={session.id === pendingId}
                           key={session.id}
                           onDelete={onDelete ? requestDelete : undefined}
-                          onJoinActive={onJoinActive}
                           onRename={onRename}
                           onSelect={onSelect}
                           onTogglePin={() => togglePin(session.id)}

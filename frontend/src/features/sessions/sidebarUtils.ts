@@ -59,7 +59,6 @@ export type SessionSidebarProps = {
   onRequestCreate: (cwd?: string) => void;
   /** 未连接时点击重新连接；已连接时该按钮仅为状态展示。 */
   onReconnect: () => void;
-  onJoinActive: (id: string) => void;
   onDelete?: (id: string) => void;
   /** 打开重命名对话框；协议要求先 attach 目标会话。 */
   onRename?: (id: string) => void;

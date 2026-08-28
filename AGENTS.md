@@ -4,6 +4,8 @@
 
 Suna App 是 Suna Runtime 的官方 GUI 客户端（Web / PWA）。浏览器通过 Suna App Gateway 访问本地 Suna Runtime daemon：Gateway 负责发现与按需启动 Runtime、桥接公开 TCP NDJSON protocol 到浏览器 HTTP + SSE；前端只做展示与交互，业务语义全部留在 Runtime。Suna App 是独立项目、独立技术栈、独立构建与独立发版线。
 
+Runtime 源码项目位于 `/Users/qiusen/workspace/suna/`。凡涉及 session、run、attach、detach、事件流、handoff 或协议行为的问题，必须同时检查该 Runtime 项目的实现代码与协议文档，再判断 App 是否正确；不能只依据前端现象推断结论。
+
 ```text
 Browser / PWA
       │ HTTP + SSE

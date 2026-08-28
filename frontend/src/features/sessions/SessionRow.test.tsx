@@ -27,7 +27,6 @@ function renderRow(overrides: Partial<Parameters<typeof SessionRow>[0]> = {}) {
           disabled={false}
           joining={false}
           onDelete={onDelete}
-          onJoinActive={() => undefined}
           onRename={onRename}
           onSelect={onSelect}
           selected

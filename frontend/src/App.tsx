@@ -157,9 +157,6 @@ function AppShell() {
         onReconnect={() => void initialize()}
         runtimeVersion={hello?.runtime_version}
         onSelect={(id) => void attach(id).then(() => setMobileMenuOpen(false))}
-        onJoinActive={(id) =>
-          void attach(id, true).then(() => setMobileMenuOpen(false))
-        }
         open={mobileMenuOpen}
         pendingId={syncing ? selectedId : undefined}
         disabled={syncing}
