@@ -8,27 +8,21 @@ import type { SessionInfo } from "../../lib/runtimeBridge";
 type SessionHeaderProps = {
   selected?: SessionInfo;
   handoffRole: "host" | "guest";
-  resolvedTheme: "light" | "dark";
   running: boolean;
   canControl: boolean;
   syncing: boolean;
-  onToggleTheme: () => void;
-  onOpenSettings: () => void;
   onStop: () => void;
   onOpenMobileMenu: () => void;
   onRename?: () => void;
 };
 
-/** 工作区顶部栏：会话标题、状态徽章与高频操作（主题/设置/停止/详情）。 */
+/** 工作区顶部栏：会话标题、状态徽章与停止。设置入口在侧栏左下角。 */
 export function SessionHeader({
   selected,
   handoffRole,
-  resolvedTheme,
   running,
   canControl,
   syncing,
-  onToggleTheme,
-  onOpenSettings,
   onStop,
   onOpenMobileMenu,
   onRename,
@@ -120,23 +114,6 @@ export function SessionHeader({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1 max-[720px]:gap-px">
-        <Tooltip label={t("header.toggleTheme")}>
-          <IconButton
-            label={
-              resolvedTheme === "dark"
-                ? t("header.lightMode")
-                : t("header.darkMode")
-            }
-            onClick={onToggleTheme}
-          >
-            <Icon name={resolvedTheme === "dark" ? "sun" : "moon"} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip label={t("header.openSettings")}>
-          <IconButton label={t("header.openSettings")} onClick={onOpenSettings}>
-            <Icon name="settings" />
-          </IconButton>
-        </Tooltip>
         {running && canControl && !syncing && (
           <button
             aria-live="polite"

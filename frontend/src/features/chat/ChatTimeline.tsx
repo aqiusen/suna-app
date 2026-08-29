@@ -66,6 +66,8 @@ type ChatTimelineProps = {
   loading?: boolean;
   /** 空状态建议卡点击：把示例 prompt 交给外层（填入输入框）。 */
   onSuggestion?: (text: string) => void;
+  /** 把当前选中的时间线文本作为引用追加到输入框。 */
+  onQuoteSelection?: (text: string) => void;
   queuedMessages?: QueuedMessage[];
   queueControlsDisabled?: boolean;
   onRemoveQueuedMessage?: (item: QueuedMessage) => void;
@@ -89,6 +91,7 @@ export function ChatTimeline({
   sessionId,
   loading = false,
   onSuggestion,
+  onQuoteSelection,
   queuedMessages = [],
   queueControlsDisabled = false,
   onRemoveQueuedMessage,
@@ -97,6 +100,12 @@ export function ChatTimeline({
   const t = useT();
   const [historyWindow, setHistoryWindow] = useState(80);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [selectionAction, setSelectionAction] = useState<{
+    text: string;
+    x: number;
+    y: number;
+  }>();
+  const [selectionCopied, setSelectionCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const historyAnchorRef = useRef<{ height: number; top: number } | undefined>(
@@ -121,12 +130,63 @@ export function ChatTimeline({
       element.scrollHeight - element.scrollTop - element.clientHeight < 96;
     nearBottomRef.current = nearBottom;
     setShowJumpToLatest(!nearBottom);
+    setSelectionAction(undefined);
+    setSelectionCopied(false);
+  };
+  const updateSelectionAction = () => {
+    const root = scrollRef.current;
+    const selection = window.getSelection();
+    if (
+      !root ||
+      !selection ||
+      selection.isCollapsed ||
+      selection.rangeCount === 0
+    ) {
+      setSelectionAction(undefined);
+      return;
+    }
+    const anchor = selection.anchorNode;
+    const focus = selection.focusNode;
+    if (
+      (anchor && !root.contains(anchor)) ||
+      (focus && !root.contains(focus))
+    ) {
+      setSelectionAction(undefined);
+      return;
+    }
+    const text = selection.toString().trim();
+    if (!text) {
+      setSelectionAction(undefined);
+      return;
+    }
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setSelectionAction({
+      text,
+      x: Math.min(
+        window.innerWidth - 88,
+        Math.max(88, rect.left + rect.width / 2),
+      ),
+      y: Math.max(12, rect.top - 12),
+    });
+    setSelectionCopied(false);
+  };
+  const copySelection = async () => {
+    const text = selectionAction?.text;
+    if (!text) return;
+    try {
+      await navigator.clipboard?.writeText(text);
+      setSelectionCopied(true);
+    } catch {
+      // 剪贴板不可用时静默失败，选区仍可用浏览器原生复制。
+    }
   };
   useLayoutEffect(() => {
     // 不同的会话可能恰好包含相同数量的消息：重置时间线而不是继承
     // 上一个会话的滚动位置。
     nearBottomRef.current = true;
     setShowJumpToLatest(false);
+    setSelectionAction(undefined);
+    setSelectionCopied(false);
     setHistoryWindow(80);
     requestAnimationFrame(() => scrollToLatest("auto"));
   }, [sessionId]);
@@ -270,7 +330,47 @@ export function ChatTimeline({
   );
 
   return (
-    <div className="conversation-wrap" onScroll={onScroll} ref={scrollRef}>
+    <div
+      className="conversation-wrap"
+      onKeyUp={updateSelectionAction}
+      onMouseUp={updateSelectionAction}
+      onScroll={onScroll}
+      onTouchEnd={updateSelectionAction}
+      ref={scrollRef}
+    >
+      {selectionAction && (
+        <div
+          className="fixed z-30 flex -translate-x-1/2 -translate-y-full overflow-hidden rounded-xl border border-line bg-surface-solid text-[12px] font-extrabold text-ink shadow-lg"
+          onMouseDown={(event) => event.preventDefault()}
+          style={{ left: selectionAction.x, top: selectionAction.y }}
+        >
+          {onQuoteSelection && (
+            <button
+              className="flex cursor-pointer items-center gap-1.5 px-3 py-2 transition-colors duration-150 hover:bg-surface-raised"
+              onClick={() => {
+                onQuoteSelection(selectionAction.text);
+                setSelectionAction(undefined);
+                setSelectionCopied(false);
+                window.getSelection()?.removeAllRanges();
+              }}
+              type="button"
+            >
+              <Icon name="turn" size={13} />
+              {t("chat.addSelectionToConversation")}
+            </button>
+          )}
+          <button
+            className={`flex cursor-pointer items-center gap-1.5 px-3 py-2 transition-colors duration-150 hover:bg-surface-raised ${onQuoteSelection ? "border-l border-line" : ""}`}
+            onClick={() => void copySelection()}
+            type="button"
+          >
+            <Icon name={selectionCopied ? "check" : "copy"} size={13} />
+            {selectionCopied
+              ? t("chat.selectionCopied")
+              : t("chat.copySelection")}
+          </button>
+        </div>
+      )}
       <section
         aria-label={t("chat.timelineLabel")}
         className="animate-[message-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both] mx-auto w-[min(720px,calc(100%-48px))] px-0 pt-8 pb-12 max-[720px]:w-[min(100%-28px,640px)] max-[720px]:pt-6 max-[720px]:pb-7"
@@ -459,7 +559,7 @@ export function ChatTimeline({
           onClick={() => scrollToLatest()}
           type="button"
         >
-          <Icon name="arrow-up" size={14} />
+          <Icon name="arrow-down" size={14} />
           {t("chat.backToLatest")}
         </button>
       )}

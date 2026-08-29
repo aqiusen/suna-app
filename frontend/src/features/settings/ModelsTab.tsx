@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { Icon } from "../../components/Icon";
 import { Select } from "../../components/ui/Select";
+import { gatewayPath } from "../../lib/desktopGateway";
 import { useT } from "../../lib/i18n";
 import type { ConfigModel } from "../../lib/runtimeBridge";
 import type { SettingsTabProps } from "./RuntimeSettings";
@@ -35,6 +37,7 @@ const PROTOCOLS = [
   "ollama",
   "gemini",
 ];
+const MODEL_LIST_CACHE_KEY = "suna-app.model-list-cache.v1";
 
 function modelRef(model: ConfigModel) {
   return `${model.provider}/${model.model}`;
@@ -56,17 +59,81 @@ function fromModel(model: ConfigModel): ModelDraft {
   };
 }
 
+function modelSuggestions(models: string[]) {
+  return [...new Set(models)];
+}
+
+function modelListCacheKey(
+  draft: Pick<ModelDraft, "provider" | "protocol" | "base_url">,
+) {
+  const provider = draft.provider.trim().toLowerCase();
+  const protocol = draft.protocol.trim().toLowerCase();
+  const baseURL = draft.base_url.trim().replace(/\/+$/, "");
+  if (!provider || !protocol || !baseURL) return "";
+  return JSON.stringify([provider, protocol, baseURL]);
+}
+
+function readModelListCache(cacheKey: string) {
+  if (!cacheKey) return [];
+  try {
+    const cache = JSON.parse(
+      window.localStorage.getItem(MODEL_LIST_CACHE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    const models = cache[cacheKey];
+    return Array.isArray(models)
+      ? models.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeModelListCache(cacheKey: string, models: string[]) {
+  if (!cacheKey) return;
+  try {
+    const cache = JSON.parse(
+      window.localStorage.getItem(MODEL_LIST_CACHE_KEY) ?? "{}",
+    ) as Record<string, unknown>;
+    cache[cacheKey] = [...new Set(models)];
+    window.localStorage.setItem(MODEL_LIST_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // 本地缓存只是减少重复下载，写失败不影响模型配置本身。
+  }
+}
+
 /** 模型 Tab：列表 + 新增/编辑（对齐 TUI 表单）+ 删除 + 激活（设计 §10.2）。 */
-export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
+export function ModelsTab({
+  cap,
+  config,
+  onConfig,
+  onApplySessionModel,
+  rpc,
+}: SettingsTabProps) {
   const t = useT();
   const [editing, setEditing] = useState<ConfigModel | "new" | undefined>();
   const [draft, setDraft] = useState<ModelDraft>(EMPTY_DRAFT);
   const [error, setError] = useState<string>();
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
 
   function startEdit(model: ConfigModel | "new") {
+    const nextDraft = model === "new" ? EMPTY_DRAFT : fromModel(model);
     setEditing(model);
-    setDraft(model === "new" ? EMPTY_DRAFT : fromModel(model));
+    setDraft(nextDraft);
     setError(undefined);
+    setDiscoveredModels(readModelListCache(modelListCacheKey(nextDraft)));
+  }
+
+  function enteredAPIKey() {
+    const value = draft.api_key.trim();
+    if (
+      editing !== undefined &&
+      editing !== "new" &&
+      value === editing.api_key_hint
+    ) {
+      return "";
+    }
+    return value;
   }
 
   async function save() {
@@ -102,13 +169,20 @@ export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
             .filter(Boolean)
         : undefined,
     };
+    const previousRef =
+      editing !== undefined && editing !== "new" ? modelRef(editing) : "";
+    const nextRef = `${payload.provider}/${payload.model}`;
     try {
       const next = await rpc("config.set", {
         action: "upsert_model",
         model: payload,
-        api_key: draft.api_key.trim() || undefined,
+        model_ref: previousRef || undefined,
+        api_key: enteredAPIKey() || undefined,
       });
       onConfig(next);
+      if (previousRef && activeRef === previousRef && nextRef !== previousRef) {
+        await onApplySessionModel?.(nextRef);
+      }
       setEditing(undefined);
     } catch (reason) {
       setError(
@@ -138,12 +212,15 @@ export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
   }
 
   async function activate(model: ConfigModel) {
+    const ref = modelRef(model);
     try {
       const next = await rpc("config.set", {
         action: "activate_model",
-        active_model: modelRef(model),
+        active_model: ref,
       });
       onConfig(next);
+      // 全局默认只影响新会话；当前输入框读的是 session.model_ref，必须一并切换。
+      await onApplySessionModel?.(ref);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : t("models.error.activate"),
@@ -153,6 +230,75 @@ export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
 
   if (!config) return null;
   const activeRef = config.active_model;
+  const suggestions = modelSuggestions(discoveredModels);
+
+  function canDiscoverWithSavedKey() {
+    return (
+      editing !== undefined &&
+      editing !== "new" &&
+      editing.has_api_key === true &&
+      !enteredAPIKey() &&
+      cap("config.discoverModels") &&
+      draft.provider.trim() === editing.provider &&
+      draft.protocol === editing.protocol &&
+      draft.base_url.trim() === (editing.base_url ?? "").trim()
+    );
+  }
+
+  async function discoverModels() {
+    if (discovering) return;
+    if (!draft.base_url.trim()) {
+      setError(t("models.error.endpoint"));
+      return;
+    }
+    const useSavedKey = canDiscoverWithSavedKey();
+    const apiKey = enteredAPIKey();
+    if (!apiKey && !useSavedKey) {
+      setError(t("models.error.discoverKey"));
+      return;
+    }
+    setDiscovering(true);
+    setError(undefined);
+    try {
+      if (useSavedKey && editing !== "new" && editing !== undefined) {
+        const result = await rpc("config.discoverModels", {
+          model_ref: modelRef(editing),
+        });
+        if (result.error_message) throw new Error(result.error_message);
+        setDiscoveredModels(result.models);
+        writeModelListCache(modelListCacheKey(draft), result.models);
+        return;
+      }
+      const response = await fetch(gatewayPath("/api/v1/models/discover"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          base_url: draft.base_url,
+          api_key: apiKey,
+          protocol: draft.protocol,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok || !Array.isArray(body.models)) {
+        const message =
+          typeof body?.error?.message === "string"
+            ? body.error.message
+            : t("models.error.discover");
+        throw new Error(message);
+      }
+      const nextModels = body.models.filter(
+        (item: unknown) => typeof item === "string",
+      );
+      setDiscoveredModels(nextModels);
+      writeModelListCache(modelListCacheKey(draft), nextModels);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : t("models.error.discover"),
+      );
+    } finally {
+      setDiscovering(false);
+    }
+  }
 
   return (
     <div className="grid gap-4">
@@ -180,7 +326,13 @@ export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
           <div className="grid grid-cols-2 gap-2.5">
             <Field
               label="Provider"
-              onChange={(value) => setDraft({ ...draft, provider: value })}
+              onChange={(value) => {
+                const nextDraft = { ...draft, provider: value };
+                setDraft(nextDraft);
+                setDiscoveredModels(
+                  readModelListCache(modelListCacheKey(nextDraft)),
+                );
+              }}
               required
               value={draft.provider}
             />
@@ -188,9 +340,13 @@ export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
               {t("models.protocol")}
               <Select
                 ariaLabel={t("models.protocol")}
-                onValueChange={(value) =>
-                  setDraft({ ...draft, protocol: value })
-                }
+                onValueChange={(value) => {
+                  const nextDraft = { ...draft, protocol: value };
+                  setDraft(nextDraft);
+                  setDiscoveredModels(
+                    readModelListCache(modelListCacheKey(nextDraft)),
+                  );
+                }}
                 options={PROTOCOLS.map((value) => ({ value, label: value }))}
                 value={draft.protocol}
               />
@@ -199,17 +355,43 @@ export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
           <Field
             label={t("models.modelName")}
             onChange={(value) => setDraft({ ...draft, model: value })}
+            onPickSuggestion={(value) => setDraft({ ...draft, model: value })}
             required
+            sideAction={
+              <button
+                aria-label={t("models.discover")}
+                className="inline-grid h-[38px] w-[38px] shrink-0 cursor-pointer place-items-center rounded-lg border border-line bg-surface-raised text-ink-muted transition-colors duration-150 hover:border-blue/30 hover:bg-surface-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={!draft.base_url.trim() || discovering}
+                onClick={() => void discoverModels()}
+                title={t("models.discover")}
+                type="button"
+              >
+                <Icon name="download" size={16} />
+              </button>
+            }
+            showSuggestions={discoveredModels.length > 0}
+            suggestions={suggestions}
             value={draft.model}
           />
           <Field
             label="Endpoint"
-            onChange={(value) => setDraft({ ...draft, base_url: value })}
+            onChange={(value) => {
+              const nextDraft = { ...draft, base_url: value };
+              setDraft(nextDraft);
+              setDiscoveredModels(
+                readModelListCache(modelListCacheKey(nextDraft)),
+              );
+            }}
             placeholder="https://api.example.com"
             required
             value={draft.base_url}
           />
           <Field
+            hint={
+              editing !== "new" && editing?.api_key_hint
+                ? t("models.apiKeySavedHint", { key: editing.api_key_hint })
+                : undefined
+            }
             label="API Key"
             onChange={(value) => setDraft({ ...draft, api_key: value })}
             placeholder={
@@ -240,16 +422,27 @@ export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
               value={draft.max_output_tokens}
             />
           </div>
-          <Field
-            label={t("models.strengths")}
-            onChange={(value) => setDraft({ ...draft, strengths: value })}
-            value={draft.strengths}
-          />
-          <Field
-            label={t("models.subtaskFor")}
-            onChange={(value) => setDraft({ ...draft, subtask_for: value })}
-            value={draft.subtask_for}
-          />
+          <details className="rounded-lg border border-line bg-surface-raised/40 px-3 py-2">
+            <summary className="cursor-pointer text-[11px] font-bold text-ink-muted transition-colors duration-150 hover:text-ink">
+              {t("models.advancedRouting")}
+            </summary>
+            <div className="mt-2.5 grid gap-2.5">
+              <Field
+                hint={t("models.strengthsHint")}
+                label={t("models.strengths")}
+                onChange={(value) => setDraft({ ...draft, strengths: value })}
+                placeholder={t("models.strengthsPlaceholder")}
+                value={draft.strengths}
+              />
+              <Field
+                hint={t("models.subtaskForHint")}
+                label={t("models.subtaskFor")}
+                onChange={(value) => setDraft({ ...draft, subtask_for: value })}
+                placeholder={t("models.subtaskForPlaceholder")}
+                value={draft.subtask_for}
+              />
+            </div>
+          </details>
           {error && (
             <small className="text-[12px] font-semibold text-rose">
               {error}
@@ -270,6 +463,11 @@ export function ModelsTab({ config, onConfig, rpc }: SettingsTabProps) {
               {t("models.save")}
             </button>
           </div>
+          {discovering && (
+            <small className="text-[11px] font-semibold text-ink-muted">
+              {t("models.discovering")}
+            </small>
+          )}
         </form>
       ) : (
         config.models.map((model) => {
@@ -335,28 +533,104 @@ function Field({
   label,
   value,
   onChange,
+  onPickSuggestion,
   placeholder,
+  hint,
   required,
+  showSuggestions,
+  sideAction,
+  suggestions,
   type = "text",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onPickSuggestion?: (value: string) => void;
   placeholder?: string;
+  hint?: string;
   required?: boolean;
+  showSuggestions?: boolean;
+  sideAction?: ReactNode;
+  suggestions?: string[];
   type?: string;
 }) {
+  const inputId = useId();
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const options = suggestions ?? [];
+  const listId =
+    options.length > 0
+      ? `model-field-${label.replace(/\W+/g, "-").toLowerCase()}`
+      : undefined;
+  useEffect(() => {
+    if (showSuggestions && options.length > 0) {
+      setSuggestionsOpen(true);
+    }
+  }, [options.length, showSuggestions]);
+
   return (
-    <label className="grid gap-1 text-[11px] font-bold text-ink-soft">
-      {label}
-      <input
-        className="rounded-lg border border-line bg-surface-raised px-2.5 py-2 text-[12px] text-ink focus:border-blue/50 focus:ring-2 focus:ring-blue/25 focus:outline-none"
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        required={required}
-        type={type}
-        value={value}
-      />
-    </label>
+    <div className="grid gap-1 text-[11px] font-bold text-ink-soft">
+      <label htmlFor={inputId}>{label}</label>
+      <span className="flex items-center gap-2">
+        <input
+          id={inputId}
+          className="min-w-0 flex-1 rounded-lg border border-line bg-surface-raised px-2.5 py-2 text-[12px] text-ink focus:border-blue/50 focus:ring-2 focus:ring-blue/25 focus:outline-none"
+          list={listId}
+          onChange={(event) => onChange(event.target.value)}
+          onFocus={() => {
+            if (showSuggestions && options.length > 0) {
+              setSuggestionsOpen(true);
+            }
+          }}
+          placeholder={placeholder}
+          required={required}
+          type={type}
+          value={value}
+        />
+        {sideAction}
+      </span>
+      {listId && (
+        <datalist id={listId}>
+          {options.map((item) => (
+            <option key={item} value={item} />
+          ))}
+        </datalist>
+      )}
+      {showSuggestions &&
+        suggestionsOpen &&
+        options.length > 0 &&
+        onPickSuggestion && (
+          <span className="grid max-h-36 gap-1 overflow-auto rounded-lg border border-line bg-surface-raised p-1">
+            {options.map((item) => (
+              <button
+                className={`flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[12px] font-medium transition-colors duration-100 hover:bg-surface-subtle hover:text-ink ${
+                  item === value
+                    ? "bg-surface-subtle text-ink"
+                    : "text-ink-soft"
+                }`}
+                key={item}
+                onClick={() => {
+                  onPickSuggestion(item);
+                  setSuggestionsOpen(false);
+                }}
+                type="button"
+              >
+                <span className="truncate">{item}</span>
+                {item === value && (
+                  <Icon
+                    className="shrink-0 text-blue-strong"
+                    name="check"
+                    size={13}
+                  />
+                )}
+              </button>
+            ))}
+          </span>
+        )}
+      {hint && (
+        <span className="font-medium text-[10.5px] leading-relaxed text-ink-muted">
+          {hint}
+        </span>
+      )}
+    </div>
   );
 }

@@ -126,16 +126,24 @@ func (e *RPCError) Error() string {
 // Kind 返回 Runtime 结构化错误的稳定分类（data.kind）。
 // 它只存在于公开协议中；无法解析时返回空字符串。
 func (e *RPCError) Kind() string {
+	return e.fieldFromData("kind")
+}
+
+// Reason 返回 Runtime 结构化错误的稳定细分原因（data.reason）。
+// 客户端只依赖公开协议字段，不展示 Runtime 自由文本 message。
+func (e *RPCError) Reason() string {
+	return e.fieldFromData("reason")
+}
+
+func (e *RPCError) fieldFromData(field string) string {
 	if e == nil || len(e.Data) == 0 {
 		return ""
 	}
-	var data struct {
-		Kind string `json:"kind"`
-	}
+	var data map[string]string
 	if err := json.Unmarshal(e.Data, &data); err != nil {
 		return ""
 	}
-	return data.Kind
+	return data[field]
 }
 
 // Notification is a server-originated JSON-RPC notification.

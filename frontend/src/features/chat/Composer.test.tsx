@@ -12,7 +12,8 @@ vi.mock("../../lib/desktopGateway", () => ({
 
 /** 包裹 LocaleProvider：组件内部 useT() 需要 context。 */
 function renderComposer(props: Partial<Parameters<typeof Composer>[0]> = {}) {
-  const onSubmit = vi.fn<() => Promise<void>>();
+  const onSubmit =
+    vi.fn<(parts: { type: string; text?: string }[]) => Promise<void>>();
   render(
     <LocaleProvider>
       <Composer onSubmit={onSubmit} {...props} />
@@ -86,6 +87,67 @@ describe("Composer 乐观清空状态机", () => {
     });
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe("Composer slash commands", () => {
+  it("matches a skill while typing and inserts it into the composer", async () => {
+    const loadSkills = vi.fn().mockResolvedValue([
+      {
+        name: "agent-browser",
+        enabled: true,
+        valid: true,
+        scope: "project",
+        description: "Browse the web",
+        path: "/repo/.agents/skills/agent-browser",
+      },
+    ]);
+    const { onSubmit } = renderComposer({
+      slashCommands: [{ cmd: "/skills", descKey: "slash.skills" }],
+      loadSkills,
+      onToggleSkill: vi.fn().mockResolvedValue([]),
+    });
+
+    const textarea = type("/");
+    expect(
+      await screen.findByRole("option", { name: /agent-browser/i }),
+    ).toBeTruthy();
+    type("/agent");
+    fireEvent.click(screen.getByRole("option", { name: /agent-browser/i }));
+    expect(textarea).toHaveProperty("value", "$agent-browser ");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("sends an explicit skill_load instruction for an inserted skill", async () => {
+    const loadSkills = vi.fn().mockResolvedValue([
+      {
+        name: "agent-browser",
+        enabled: true,
+        valid: true,
+        scope: "project",
+        path: "/repo/.agents/skills/agent-browser",
+      },
+    ]);
+    const { onSubmit } = renderComposer({
+      slashCommands: [{ cmd: "/skills", descKey: "slash.skills" }],
+      loadSkills,
+      onToggleSkill: vi.fn().mockResolvedValue([]),
+    });
+    onSubmit.mockResolvedValue(undefined);
+
+    const textarea = type("/");
+    await screen.findByRole("option", { name: /agent-browser/i });
+    fireEvent.change(textarea, {
+      target: { value: "$agent-browser 打开这个网站" },
+    });
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: "Enter" });
+      await Promise.resolve();
+    });
+    const sent = onSubmit.mock.calls[0]?.[0] as
+      { type: string; text?: string }[] | undefined;
+    expect(sent?.[0]?.text).toContain("skill_load");
+    expect(sent?.[0]?.text).toContain("打开这个网站");
   });
 });
 

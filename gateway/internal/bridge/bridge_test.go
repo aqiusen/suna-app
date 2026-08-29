@@ -84,7 +84,7 @@ func TestDefaultAllowedMethodIsExactPublicProtocolAllowlist(t *testing.T) {
 		"session.list", "session.create", "session.attach", "session.detach",
 		"session.update", "session.delete", "session.compact", "session.usage",
 		"agent.sendMessage", "agent.resumeRun", "agent.cancel", "agent.askReply", "agent.guardReply",
-		"config.get", "config.set",
+		"config.get", "config.set", "config.discoverModels",
 		"memory.list", "memory.delete", "memory.clear",
 		"skill.list", "skill.set",
 		"mcp.list", "mcp.toggle", "mcp.reload",

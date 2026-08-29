@@ -264,6 +264,7 @@ export type ConfigModel = {
   subtask_for?: string[];
   reasoning?: JSONRecord;
   has_api_key?: boolean;
+  api_key_hint?: string;
 };
 export type RuntimeConfig = {
   models: ConfigModel[];
@@ -386,6 +387,10 @@ export type RuntimeBridgeMethods = {
   };
   "config.get": { params: Record<string, never>; result: RuntimeConfig };
   "config.set": { params: ConfigSetParams; result: RuntimeConfig };
+  "config.discoverModels": {
+    params: { model_ref: string };
+    result: { models: string[]; error_message?: string };
+  };
   "memory.list": {
     params: Record<string, never>;
     result: { memories: MemoryItem[] };

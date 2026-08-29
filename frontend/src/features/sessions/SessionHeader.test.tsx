@@ -15,10 +15,7 @@ function renderHeader(
           canControl
           handoffRole="host"
           onOpenMobileMenu={() => undefined}
-          onOpenSettings={() => undefined}
           onStop={onStop}
-          onToggleTheme={() => undefined}
-          resolvedTheme="light"
           running
           selected={{
             id: "s1",

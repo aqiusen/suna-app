@@ -1,5 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import {
+  ArrowDown,
   ArrowUp,
   BookOpen,
   Brain,
@@ -9,6 +10,7 @@ import {
   Copy,
   CornerDownRight,
   Database,
+  Download,
   Ellipsis,
   Eye,
   Folder,
@@ -37,6 +39,7 @@ import {
 } from "lucide-react";
 
 export type IconName =
+  | "arrow-down"
   | "arrow-up"
   | "book"
   | "brain"
@@ -47,6 +50,7 @@ export type IconName =
   | "copy"
   | "turn"
   | "database"
+  | "download"
   | "ellipsis"
   | "eye"
   | "folder"
@@ -72,6 +76,7 @@ export type IconName =
   | "plug";
 
 const icons: Record<IconName, React.ComponentType<LucideProps>> = {
+  "arrow-down": ArrowDown,
   "arrow-up": ArrowUp,
   book: BookOpen,
   brain: Brain,
@@ -82,6 +87,7 @@ const icons: Record<IconName, React.ComponentType<LucideProps>> = {
   copy: Copy,
   turn: CornerDownRight,
   database: Database,
+  download: Download,
   ellipsis: Ellipsis,
   eye: Eye,
   folder: Folder,

@@ -175,7 +175,7 @@ body {
 
 /* 选中文本使用主题蓝。 */
 ::selection {
-  background: var(--color-blue-soft);
+  background: color-mix(in srgb, var(--color-blue) 32%, transparent);
   color: var(--color-ink);
 }
 
@@ -849,17 +849,17 @@ button {
     }
   }
 
-  /* 设置浮层定位。 */
+  /* 设置浮层：从侧栏左下角长出，内部左分类右内容（Codex 式）。 */
   .runtime-settings {
-    position: absolute;
-    right: 18px;
-    top: 76px;
-    width: min(380px, calc(100vw - 36px));
-    max-height: calc(100vh - 130px);
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    width: min(780px, calc(100vw - 32px));
+    height: min(640px, calc(100dvh - 32px));
     z-index: 8;
-    transform-origin: top right;
+    transform-origin: bottom left;
   }
-  /* 设置浮层点击外部关闭的透明遮罩：覆盖全屏但低于面板（z 7 < 8）。 */
+  /* 设置浮层点击外部关闭的遮罩：覆盖全屏但低于面板（z 7 < 8）。 */
   .settings-scrim {
     position: fixed;
     inset: 0;
@@ -867,15 +867,16 @@ button {
     width: 100%;
     height: 100%;
     padding: 0;
-    background: transparent;
     border: 0;
+    background: color-mix(in srgb, var(--color-ink) 18%, transparent);
   }
   @media (max-width: 720px) {
     .runtime-settings {
-      left: 12px;
-      right: 12px;
-      top: 64px;
+      inset: 0;
       width: auto;
+      height: auto;
+      border-radius: 0;
+      transform-origin: bottom center;
     }
   }
 

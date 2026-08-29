@@ -84,4 +84,32 @@ describe("SessionSidebar 会话操作", () => {
     renderSidebar();
     expect(screen.getAllByText("Demo session")).toHaveLength(2);
   });
+
+  it("nests sessions under the project row", () => {
+    renderSidebar();
+    const session = screen.getByRole("button", { name: /demo session/i });
+    expect(session.closest(".border-l")).toBeTruthy();
+  });
+
+  it("puts settings in the sidebar footer", () => {
+    const onOpenSettings = vi.fn();
+    render(
+      <LocaleProvider>
+        <TooltipProvider>
+          <SessionSidebar
+            connected
+            onCreate={async () => undefined}
+            onOpenSettings={onOpenSettings}
+            onReconnect={() => undefined}
+            onRequestCreate={() => undefined}
+            onSelect={() => undefined}
+            selectedId="s1"
+            sessions={[session]}
+          />
+        </TooltipProvider>
+      </LocaleProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
 });

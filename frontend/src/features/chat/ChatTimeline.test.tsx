@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../../components/ui/Tooltip";
 import { LocaleProvider } from "../../lib/i18n";
 import { ChatTimeline } from "./ChatTimeline";
@@ -7,6 +7,9 @@ import { ChatTimeline } from "./ChatTimeline";
 describe("ChatTimeline turn ordering", () => {
   beforeEach(() => {
     HTMLElement.prototype.scrollTo = vi.fn();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("renders each response directly after its applied user message", () => {
@@ -107,5 +110,77 @@ describe("ChatTimeline turn ordering", () => {
     expect(screen.queryByText("Status: 200 200 OK | Headers:")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /tool activity/i }));
     expect(screen.getByText("Status: 200 200 OK | Headers:")).toBeTruthy();
+  });
+
+  it("offers selected text as composer context", () => {
+    const onQuoteSelection = vi.fn();
+    render(
+      <LocaleProvider>
+        <ChatTimeline
+          messages={[{ id: "msg-1", role: "assistant", content: "select me" }]}
+          onQuoteSelection={onQuoteSelection}
+          running={false}
+        />
+      </LocaleProvider>,
+    );
+
+    const textNode = screen.getByText("select me").firstChild;
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      anchorNode: textNode,
+      focusNode: textNode,
+      isCollapsed: false,
+      rangeCount: 1,
+      removeAllRanges: vi.fn(),
+      getRangeAt: () => ({
+        getBoundingClientRect: () =>
+          ({ left: 100, top: 100, width: 80 }) as DOMRect,
+      }),
+      toString: () => "select me",
+    } as unknown as Selection);
+
+    fireEvent.mouseUp(screen.getByText("select me"));
+    fireEvent.click(
+      screen.getByRole("button", { name: /add to conversation/i }),
+    );
+
+    expect(onQuoteSelection).toHaveBeenCalledWith("select me");
+  });
+
+  it("copies selected text from the selection popup", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(
+      <LocaleProvider>
+        <ChatTimeline
+          messages={[{ id: "msg-1", role: "assistant", content: "copy me" }]}
+          running={false}
+        />
+      </LocaleProvider>,
+    );
+
+    const textNode = screen.getByText("copy me").firstChild;
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      anchorNode: textNode,
+      focusNode: textNode,
+      isCollapsed: false,
+      rangeCount: 1,
+      removeAllRanges: vi.fn(),
+      getRangeAt: () => ({
+        getBoundingClientRect: () =>
+          ({ left: 100, top: 100, width: 80 }) as DOMRect,
+      }),
+      toString: () => "copy me",
+    } as unknown as Selection);
+
+    fireEvent.mouseUp(screen.getByText("copy me"));
+    fireEvent.click(screen.getByRole("button", { name: /^copy$/i }));
+
+    expect(writeText).toHaveBeenCalledWith("copy me");
+    expect(
+      await screen.findByRole("button", { name: /^copied$/i }),
+    ).toBeTruthy();
   });
 });

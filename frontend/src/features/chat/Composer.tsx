@@ -7,7 +7,11 @@ import {
 } from "react";
 import { Icon } from "../../components/Icon";
 import { useT } from "../../lib/i18n";
-import type { MessagePart } from "../../lib/runtimeTypes";
+import type {
+  ConfigModel,
+  MessagePart,
+  SkillInfo,
+} from "../../lib/runtimeTypes";
 import {
   isNativeDesktopShell,
   resolvePastedFiles,
@@ -15,10 +19,20 @@ import {
   selectLocalFiles,
   type PickedFile,
 } from "../../lib/desktopGateway";
-import type { ConfigModel } from "../../lib/runtimeTypes";
 import { ComposerApprovalMode } from "./ComposerApprovalMode";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import { ComposerModelSelect } from "./ComposerModelSelect";
+import { ComposerSkillsPanel } from "./ComposerSkillsPanel";
+import { ComposerSlashMenu } from "./ComposerSlashMenu";
+import {
+  insertSkillDraft,
+  registeredSlashCommand,
+  runtimeSkillPrompt,
+  skillNeedingEnable,
+  slashMenuItems,
+  type SlashCommand,
+  type SlashItem,
+} from "./slashCommands";
 
 type ComposerProps = {
   onSubmit: (parts: MessagePart[]) => Promise<void>;
@@ -40,6 +54,11 @@ type ComposerProps = {
   approvalMode?: string;
   /** 保存批准方式。 */
   onApprovalModeChange?: (mode: string) => Promise<void>;
+  /** 当前 Runtime 可执行的 slash 命令（与 TUI 注册表对齐）。 */
+  slashCommands?: SlashCommand[];
+  onSlashCommand?: (cmd: string) => void;
+  loadSkills?: () => Promise<SkillInfo[]>;
+  onToggleSkill?: (skill: SkillInfo, enabled: boolean) => Promise<SkillInfo[]>;
 };
 
 function isImageFile(file: PickedFile): boolean {
@@ -109,6 +128,8 @@ declare global {
 export type ComposerHandle = {
   /** 外部（如空状态建议卡）向输入框填充草稿并聚焦。 */
   fillDraft: (text: string) => void;
+  /** 外部把引用、上下文等追加到当前草稿末尾并聚焦。 */
+  appendDraft: (text: string) => void;
 };
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(
@@ -126,11 +147,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       approvalMode,
       onApprovalModeChange,
       onReasoningChange,
+      slashCommands = [],
+      onSlashCommand,
+      loadSkills,
+      onToggleSkill,
     },
     ref,
   ) {
     const t = useT();
     const [draft, setDraft] = useState("");
+    const [skillsOpen, setSkillsOpen] = useState(false);
+    const [skillCatalog, setSkillCatalog] = useState<SkillInfo[]>([]);
+    const [slashIndex, setSlashIndex] = useState(0);
     const [imageUrl, setImageUrl] = useState("");
     const [imageUrls, setImageUrls] = useState<string[]>([]);
     // 桌面壳的本机文件附件（path kind）：原生对话框选择或粘贴 file:// 解析。
@@ -141,11 +169,69 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     // 桌面壳才提供原生文件选择/粘贴路径解析能力。
     const nativeShell = isNativeDesktopShell();
+    const availableSlash = new Set(slashCommands.map((item) => item.cmd));
+    const slashItems = slashMenuItems(draft, availableSlash, skillCatalog);
+    const slashOpen = slashItems.length > 0 && !skillsOpen;
+    const browsingSlash = draft.startsWith("/");
+
+    function focusComposer() {
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+
+    function applySkill(skill: SkillInfo) {
+      setSkillsOpen(false);
+      setSlashIndex(0);
+      setDraft(insertSkillDraft(skill.name));
+      focusComposer();
+      if (
+        onToggleSkill &&
+        !skill.enabled &&
+        skill.scope !== "project" &&
+        skill.can_toggle !== false
+      ) {
+        void onToggleSkill(skill, true)
+          .then(setSkillCatalog)
+          .catch(() => undefined);
+      }
+    }
+
+    function pickSlash(item: SlashItem) {
+      if (item.kind === "skill") {
+        applySkill(item.skill);
+        return;
+      }
+      runSlash(item.command.cmd);
+    }
+
+    function runSlash(cmd: string) {
+      setDraft("");
+      setSlashIndex(0);
+      if (cmd === "/skills" && loadSkills) {
+        setSkillsOpen(true);
+        return;
+      }
+      onSlashCommand?.(cmd);
+    }
 
     useEffect(() => {
       // 发送后清空草稿时，把自动增高的高度恢复为初始值。
       if (!draft && textareaRef.current) textareaRef.current.style.height = "";
     }, [draft]);
+    useEffect(() => {
+      if (slashIndex >= slashItems.length) setSlashIndex(0);
+    }, [slashIndex, slashItems.length]);
+    useEffect(() => {
+      if (!loadSkills || !browsingSlash) return;
+      let alive = true;
+      void loadSkills()
+        .then((items) => {
+          if (alive) setSkillCatalog(items);
+        })
+        .catch(() => undefined);
+      return () => {
+        alive = false;
+      };
+    }, [browsingSlash, loadSkills]);
 
     useEffect(() => {
       if (focusTrigger > 0 && !disabled) textareaRef.current?.focus();
@@ -157,6 +243,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       () => ({
         fillDraft(text: string) {
           setDraft(text);
+          setError(undefined);
+          requestAnimationFrame(() => textareaRef.current?.focus());
+        },
+        appendDraft(text: string) {
+          setDraft((value) =>
+            value.trim() ? `${value.trimEnd()}\n\n${text}` : text,
+          );
           setError(undefined);
           requestAnimationFrame(() => textareaRef.current?.focus());
         },
@@ -236,6 +329,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
 
     async function submit() {
       const message = draft.trim();
+      if (slashOpen) {
+        const selected = slashItems[slashIndex] ?? slashItems[0];
+        if (selected) pickSlash(selected);
+        return;
+      }
+      const slash = registeredSlashCommand(message, availableSlash);
+      if (slash) {
+        runSlash(slash);
+        return;
+      }
       if (
         (!message && imageUrls.length === 0 && localFiles.length === 0) ||
         sending ||
@@ -255,7 +358,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       // 全部附件（已添加 chips + 输入框未添加的一个）一起提交。
       const urls = imageUrls.map((url) => url.trim()).filter(Boolean);
       if (imageUrl.trim()) urls.push(imageUrl.trim());
-      const parts = buildAttachmentParts(message, urls, localFiles);
+      if (onToggleSkill) {
+        const pendingSkill = skillNeedingEnable(draft, skillCatalog);
+        if (pendingSkill) {
+          try {
+            const next = await onToggleSkill(pendingSkill, true);
+            setSkillCatalog(next);
+          } catch (reason) {
+            setError(
+              reason instanceof Error ? reason.message : t("chat.sendError"),
+            );
+            setSending(false);
+            return;
+          }
+        }
+      }
+      const parts = buildAttachmentParts(
+        runtimeSkillPrompt(message, skillCatalog),
+        urls,
+        localFiles,
+      );
       // 乐观清空：立即清空输入（发送按钮进入 sending 态），失败时恢复草稿，
       // 避免网络慢时用户误以为没发出而重复提交。
       const prevDraft = draft;
@@ -303,8 +425,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           </div>
         )}
         <div
-          className={`mx-auto w-[min(720px,100%)] rounded-[16px] border bg-surface-solid px-3.5 pt-3 pb-2.5 transition-colors duration-150 max-[720px]:rounded-xl max-[720px]:px-3 max-[720px]:pt-2.5 max-[720px]:pb-2 ${observer ? "border-dashed border-rose/30 bg-surface-subtle/70 opacity-75" : "border-line-strong focus-within:border-blue/50"}`}
+          className={`relative mx-auto w-[min(720px,100%)] rounded-[16px] border bg-surface-solid px-3.5 pt-3 pb-2.5 transition-colors duration-150 max-[720px]:rounded-xl max-[720px]:px-3 max-[720px]:pt-2.5 max-[720px]:pb-2 ${observer ? "border-dashed border-rose/30 bg-surface-subtle/70 opacity-75" : "border-line-strong focus-within:border-blue/50"}`}
         >
+          {slashOpen && (
+            <ComposerSlashMenu
+              items={slashItems}
+              onPick={pickSlash}
+              selected={slashIndex}
+            />
+          )}
+          {skillsOpen && loadSkills && (
+            <ComposerSkillsPanel
+              loadSkills={loadSkills}
+              onClose={() => setSkillsOpen(false)}
+              onPick={applySkill}
+            />
+          )}
           {observer && (
             <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[10.5px] font-semibold text-rose/80">
               <Icon name="eye" size={12} />
@@ -414,12 +550,34 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               element.style.height = `${Math.min(element.scrollHeight, 132)}px`;
             }}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (slashOpen) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSlashIndex((value) =>
+                    Math.min(value + 1, slashItems.length - 1),
+                  );
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSlashIndex((value) => Math.max(value - 1, 0));
+                  return;
+                }
+                if (event.key === "Tab") {
+                  event.preventDefault();
+                  const selected = slashItems[slashIndex] ?? slashItems[0];
+                  if (selected) pickSlash(selected);
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setDraft("");
+                  return;
+                }
+              }
               const mod = event.metaKey || event.ctrlKey;
-              if (
-                event.key === "Enter" &&
-                !event.nativeEvent.isComposing &&
-                (mod || !event.shiftKey)
-              ) {
+              if (event.key === "Enter" && (mod || !event.shiftKey)) {
                 event.preventDefault();
                 void submit();
               }

@@ -56,6 +56,198 @@ func TestRuntimeStatusRedactsInternalErrors(t *testing.T) {
 	}
 }
 
+func TestDiscoverModelsFetchesOpenAICompatibleList(t *testing.T) {
+	t.Parallel()
+
+	var gotAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("path = %q, want /v1/models", r.URL.Path)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": []map[string]string{
+				{"id": "gpt-5.5"},
+				{"id": "gpt-5.2"},
+			},
+		})
+	}))
+	defer upstream.Close()
+
+	handler := NewServer(fakeProber{}, time.Second)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/models/discover", bytes.NewBufferString(`{"base_url":"`+upstream.URL+`/v1","api_key":"test-token"}`))
+	request.Host = "127.0.0.1:8080"
+	request.Header.Set("Origin", "http://127.0.0.1:8080")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	if gotAuth != "Bearer test-token" {
+		t.Fatalf("Authorization = %q", gotAuth)
+	}
+	var body struct {
+		Models []string `json:"models"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(body.Models, ",") != "gpt-5.2,gpt-5.5" {
+		t.Fatalf("models = %#v", body.Models)
+	}
+}
+
+func TestDiscoverModelsRequiresAPIKey(t *testing.T) {
+	t.Parallel()
+
+	handler := NewServer(fakeProber{}, time.Second)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/models/discover", bytes.NewBufferString(`{"base_url":"https://api.example.com/v1"}`))
+	request.Host = "127.0.0.1:8080"
+	request.Header.Set("Origin", "http://127.0.0.1:8080")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(response.Body.String(), "api_key_required") || !strings.Contains(response.Body.String(), "请先填写 API Key") {
+		t.Fatalf("response is not actionable: %s", response.Body.String())
+	}
+}
+
+func TestModelListEndpointsNormalizesCommonInputs(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string][]string{
+		"https://api.example.com":           {"https://api.example.com/v1/models"},
+		"https://api.example.com/v1":        {"https://api.example.com/v1/models"},
+		"https://api.example.com/v1/models": {"https://api.example.com/v1/models"},
+		"https://api.example.com/openai":    {"https://api.example.com/openai/v1/models"},
+	}
+	for input, want := range tests {
+		got, err := modelListEndpoints(input, false, "")
+		if err != nil {
+			t.Fatalf("modelListEndpoints(%q) error = %v", input, err)
+		}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("modelListEndpoints(%q) = %#v, want %#v", input, got, want)
+		}
+	}
+}
+
+func TestModelListEndpointsMatchCCSwitchCandidates(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string][]string{
+		"https://open.bigmodel.cn/api/coding/paas/v4": {
+			"https://open.bigmodel.cn/api/coding/paas/v4/models",
+			"https://open.bigmodel.cn/api/coding/paas/v4/v1/models",
+		},
+		"https://api.deepseek.com/anthropic": {
+			"https://api.deepseek.com/anthropic/v1/models",
+			"https://api.deepseek.com/v1/models",
+			"https://api.deepseek.com/models",
+		},
+		"https://api.z.ai/api/anthropic": {
+			"https://api.z.ai/api/anthropic/v1/models",
+			"https://api.z.ai/v1/models",
+			"https://api.z.ai/models",
+		},
+		"https://ark.cn-beijing.volces.com/api/coding": {
+			"https://ark.cn-beijing.volces.com/api/coding/v1/models",
+			"https://ark.cn-beijing.volces.com/v1/models",
+			"https://ark.cn-beijing.volces.com/models",
+		},
+	}
+	for input, want := range tests {
+		got, err := modelListEndpoints(input, false, "")
+		if err != nil {
+			t.Fatalf("modelListEndpoints(%q) error = %v", input, err)
+		}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("modelListEndpoints(%q) = %#v, want %#v", input, got, want)
+		}
+	}
+}
+
+func TestModelListEndpointsDerivesFromFullURLAndOverride(t *testing.T) {
+	t.Parallel()
+
+	full, err := modelListEndpoints("https://proxy.example.com/v1/chat/completions", true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(full, "\n"), "https://proxy.example.com/v1/models"; got != want {
+		t.Fatalf("full URL endpoints = %q, want %q", got, want)
+	}
+
+	override, err := modelListEndpoints("https://api.example.com/anthropic", false, "https://api.example.com/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(override, "\n"), "https://api.example.com/models"; got != want {
+		t.Fatalf("override endpoints = %q, want %q", got, want)
+	}
+}
+
+func TestDiscoverModelsTriesFallbackCandidate(t *testing.T) {
+	t.Parallel()
+
+	var paths []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": []map[string]string{{"id": "fallback-model"}},
+		})
+	}))
+	defer upstream.Close()
+
+	handler := NewServer(fakeProber{}, time.Second)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/models/discover", bytes.NewBufferString(`{"base_url":"`+upstream.URL+`/anthropic","api_key":"test-token"}`))
+	request.Host = "127.0.0.1:8080"
+	request.Header.Set("Origin", "http://127.0.0.1:8080")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	if got, want := strings.Join(paths, ","), "/anthropic/v1/models,/v1/models"; got != want {
+		t.Fatalf("paths = %q, want %q", got, want)
+	}
+}
+
+func TestDiscoverModelsFailureIsHelpfulAndRedacted(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad token test-token", http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+
+	handler := NewServer(fakeProber{}, time.Second)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/models/discover", bytes.NewBufferString(`{"base_url":"`+upstream.URL+`/v1","api_key":"test-token"}`))
+	request.Host = "127.0.0.1:8080"
+	request.Header.Set("Origin", "http://127.0.0.1:8080")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadGateway)
+	}
+	if strings.Contains(response.Body.String(), "test-token") {
+		t.Fatal("response leaked API key")
+	}
+	if !strings.Contains(response.Body.String(), upstream.URL+"/v1/models") || !strings.Contains(response.Body.String(), "HTTP Unauthorized") {
+		t.Fatalf("response is not actionable: %s", response.Body.String())
+	}
+}
+
 func TestBridgeRPCErrorMapsStableKind(t *testing.T) {
 	t.Parallel()
 
@@ -112,8 +304,61 @@ func TestBridgeRPCErrorMapsStableKind(t *testing.T) {
 	if strings.Contains(body.Error.Message, "owned by another client") {
 		t.Fatal("response leaked Runtime free-text error message")
 	}
-	if body.Error.Message == "" {
-		t.Fatal("error message must be readable")
+	if strings.Contains(body.Error.Message, "占用") {
+		t.Fatalf("error message should avoid vague ownership wording: %q", body.Error.Message)
+	}
+}
+
+func TestBridgeRPCErrorMapsSessionBusyReason(t *testing.T) {
+	t.Parallel()
+
+	connection := newHTTPFakeConnection()
+	connection.requestErr = &runtime.RPCError{
+		Code:    -32602,
+		Message: "interaction_pending",
+		Data:    json.RawMessage(`{"kind":"session_busy","reason":"interaction_pending"}`),
+	}
+	service, err := bridge.New(httpFakeConnector{connection}, bridge.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServerWithBridge(fakeProber{}, time.Second, service)
+
+	connect := httptest.NewRequest(http.MethodPost, "/api/v1/bridge/connect", nil)
+	connect.Host = "127.0.0.1:8080"
+	connect.Header.Set("Origin", "http://127.0.0.1:8080")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, connect)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("connect = %d: %s", response.Code, response.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	rpc := httptest.NewRequest(http.MethodPost, "/api/v1/bridge/"+created.ID+"/rpc", bytes.NewBufferString(`{"method":"agent.sendMessage","params":{"parts":[{"type":"text","text":"hello"}]}}`))
+	rpc.Host = "127.0.0.1:8080"
+	rpc.Header.Set("Origin", "http://127.0.0.1:8080")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, rpc)
+
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "session_busy" {
+		t.Fatalf("error code = %q, want session_busy", body.Error.Code)
+	}
+	if body.Error.Message != "请先处理当前等待回答或安全确认。" {
+		t.Fatalf("message = %q", body.Error.Message)
 	}
 }
 

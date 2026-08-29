@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,20 @@ type probeFlight struct {
 
 const probeCacheTTL = 2 * time.Second
 
+const modelDiscoveryErrorBodyLimit = 512
+
+var knownModelCompatSuffixes = []string{
+	"/api/claudecode",
+	"/api/anthropic",
+	"/apps/anthropic",
+	"/api/coding",
+	"/claudecode",
+	"/anthropic",
+	"/step_plan",
+	"/coding",
+	"/claude",
+}
+
 // NewServer serves status routes. Supplying a bridge service additionally enables
 // browser Runtime bridge routes while preserving the original construction API.
 func NewServer(prober RuntimeProber, probeTimeout time.Duration, services ...*bridge.Service) http.Handler {
@@ -87,6 +102,7 @@ func newServer(prober RuntimeProber, probeTimeout time.Duration, service *bridge
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/v1/runtime/status", s.runtimeStatus)
+	mux.HandleFunc("POST /api/v1/models/discover", s.discoverModels)
 	mux.HandleFunc("POST /api/v1/shutdown", s.handleShutdown)
 	if service != nil {
 		mux.HandleFunc("POST /api/v1/bridge/connect", s.bridgeConnect)
@@ -95,6 +111,244 @@ func newServer(prober RuntimeProber, probeTimeout time.Duration, service *bridge
 		mux.HandleFunc("DELETE /api/v1/bridge/{id}", s.bridgeDisconnect)
 	}
 	return s.securityHeaders(mux)
+}
+
+func (s *Server) discoverModels(w http.ResponseWriter, r *http.Request) {
+	if !s.sameOriginUnsafe(r) {
+		bridgeError(w, http.StatusForbidden, "origin_denied", "Request origin is not allowed.")
+		return
+	}
+	var request struct {
+		BaseURL   string `json:"base_url"`
+		APIKey    string `json:"api_key"`
+		Protocol  string `json:"protocol"`
+		AuthMode  string `json:"auth_mode"`
+		FullURL   bool   `json:"full_url"`
+		ModelsURL string `json:"models_url"`
+	}
+	if err := decodeLimitedJSON(w, r, 32<<10, &request); err != nil {
+		bridgeError(w, http.StatusBadRequest, "invalid_request", "Request must be a valid JSON object.")
+		return
+	}
+	if strings.TrimSpace(request.APIKey) == "" {
+		bridgeError(w, http.StatusBadRequest, "api_key_required", "请先填写 API Key 再拉取模型列表。已保存的 Key 不会回显，也不能直接拿来发这次测试请求。")
+		return
+	}
+	endpoints, err := modelListEndpoints(request.BaseURL, request.FullURL, request.ModelsURL)
+	if err != nil {
+		bridgeError(w, http.StatusBadRequest, "invalid_request", "Base URL must be a valid http(s) URL.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	var lastErr error
+	for _, endpoint := range endpoints {
+		models, err := fetchModelList(ctx, endpoint, request.APIKey, request.Protocol, request.AuthMode)
+		if err == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"models": models})
+			return
+		}
+		lastErr = err
+		if !errors.Is(err, errModelEndpointNotFound) {
+			break
+		}
+	}
+	message := "无法从模型服务拉取列表。已尝试：" + strings.Join(endpoints, "、") + "。请确认 Endpoint 和 API Key。"
+	if lastErr != nil {
+		message += " 最后错误：" + lastErr.Error()
+	}
+	bridgeError(w, http.StatusBadGateway, "model_discovery_failed", message)
+}
+
+func modelListEndpoints(raw string, fullURL bool, modelsURL string) ([]string, error) {
+	if trimmed := strings.TrimSpace(modelsURL); trimmed != "" {
+		endpoint, err := cleanHTTPURL(trimmed)
+		if err != nil {
+			return nil, err
+		}
+		return []string{endpoint}, nil
+	}
+
+	base, err := cleanHTTPURL(raw)
+	if err != nil {
+		return nil, err
+	}
+	if fullURL {
+		return modelListEndpointsFromFullURL(base)
+	}
+
+	parsed, _ := url.Parse(base)
+	path := strings.TrimRight(parsed.Path, "/")
+	if strings.HasSuffix(path, "/models") {
+		parsed.Path = path
+		return []string{parsed.String()}, nil
+	}
+
+	var endpoints []string
+	if endsWithVersionSegment(path) {
+		endpoints = append(endpoints, withURLPath(parsed, path+"/models"))
+		if !strings.HasSuffix(path, "/v1") {
+			endpoints = append(endpoints, withURLPath(parsed, path+"/v1/models"))
+		}
+	} else {
+		nextPath := "/v1/models"
+		if path != "" {
+			nextPath = path + "/v1/models"
+		}
+		endpoints = append(endpoints, withURLPath(parsed, nextPath))
+	}
+	if stripped, ok := stripModelCompatSuffix(path); ok {
+		root := strings.TrimRight(stripped, "/")
+		endpoints = append(endpoints, withURLPath(parsed, root+"/v1/models"))
+		endpoints = append(endpoints, withURLPath(parsed, root+"/models"))
+	}
+	return uniqueStrings(endpoints), nil
+}
+
+func cleanHTTPURL(raw string) (string, error) {
+	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(raw), "/"))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
+		return "", errors.New("invalid model endpoint")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.New("invalid model endpoint")
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func modelListEndpointsFromFullURL(raw string) ([]string, error) {
+	if idx := strings.Index(raw, "/v1/"); idx >= 0 {
+		return []string{raw[:idx] + "/v1/models"}, nil
+	}
+	idx := strings.LastIndex(raw, "/")
+	schemeIdx := strings.Index(raw, "://")
+	if idx > schemeIdx+2 {
+		return []string{raw[:idx] + "/v1/models"}, nil
+	}
+	return nil, errors.New("cannot derive model endpoint")
+}
+
+func withURLPath(parsed *url.URL, path string) string {
+	next := *parsed
+	next.Path = path
+	return next.String()
+}
+
+func endsWithVersionSegment(path string) bool {
+	last := path
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		last = path[idx+1:]
+	}
+	digits := strings.TrimPrefix(last, "v")
+	return last != digits && digits != "" && strings.IndexFunc(digits, func(r rune) bool {
+		return r < '0' || r > '9'
+	}) == -1
+}
+
+func stripModelCompatSuffix(path string) (string, bool) {
+	for _, suffix := range knownModelCompatSuffixes {
+		if strings.HasSuffix(path, suffix) {
+			return strings.TrimSuffix(path, suffix), true
+		}
+	}
+	return "", false
+}
+
+func uniqueStrings(values []string) []string {
+	unique := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		if !seen[value] {
+			seen[value] = true
+			unique = append(unique, value)
+		}
+	}
+	return unique
+}
+
+var errModelEndpointNotFound = errors.New("models endpoint not found")
+
+func fetchModelList(ctx context.Context, endpoint, apiKey, protocol, authMode string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	key := strings.TrimSpace(apiKey)
+	if key != "" {
+		if protocol == "anthropic" && authMode != "bearer" {
+			req.Header.Set("X-Api-Key", key)
+			req.Header.Set("Anthropic-Version", "2023-06-01")
+		} else {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		message := modelDiscoveryErrorMessage(resp.StatusCode, resp.Body, apiKey)
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+			return nil, fmtError(errModelEndpointNotFound, message)
+		}
+		return nil, errors.New(message)
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var models []string
+	for _, item := range payload.Data {
+		id := strings.TrimSpace(item.ID)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			models = append(models, id)
+		}
+	}
+	for _, item := range payload.Models {
+		name := strings.TrimSpace(item.Name)
+		if name != "" && !seen[name] {
+			seen[name] = true
+			models = append(models, name)
+		}
+	}
+	if len(models) == 0 {
+		return nil, errors.New("empty model list")
+	}
+	sort.Strings(models)
+	return models, nil
+}
+
+func modelDiscoveryErrorMessage(status int, body io.Reader, apiKey string) string {
+	raw, _ := io.ReadAll(io.LimitReader(body, modelDiscoveryErrorBodyLimit+1))
+	text := strings.TrimSpace(string(raw))
+	if key := strings.TrimSpace(apiKey); key != "" {
+		text = strings.ReplaceAll(text, key, "[REDACTED]")
+		text = strings.ReplaceAll(text, "Bearer "+key, "Bearer [REDACTED]")
+	}
+	if len(text) > modelDiscoveryErrorBodyLimit {
+		text = text[:modelDiscoveryErrorBodyLimit] + "..."
+	}
+	if text == "" {
+		return http.StatusText(status)
+	}
+	return "HTTP " + http.StatusText(status) + ": " + text
+}
+
+func fmtError(kind error, message string) error {
+	return errors.Join(kind, errors.New(message))
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
@@ -411,7 +665,7 @@ func bridgeRuntimeError(w http.ResponseWriter, err error) {
 			if kind == "runtime_unavailable" {
 				status = http.StatusServiceUnavailable
 			}
-			bridgeError(w, status, kind, safeRPCMessage(kind))
+			bridgeError(w, status, kind, safeRPCMessage(kind, rpcErr.Reason()))
 			return
 		}
 	}
@@ -429,12 +683,19 @@ func bridgeRuntimeError(w http.ResponseWriter, err error) {
 
 // safeRPCMessage 只根据公开协议的稳定错误 kind 生成面向浏览器的安全文案，
 // 不透传 Runtime 自由文本 message。
-func safeRPCMessage(kind string) string {
+func safeRPCMessage(kind, reason string) string {
 	switch kind {
 	case "session_required":
 		return "需要先附加到该会话。"
 	case "session_busy":
-		return "该会话正被其他客户端或任务占用，请稍后重试。"
+		switch reason {
+		case "interaction_pending":
+			return "请先处理当前等待回答或安全确认。"
+		case "run_not_steerable":
+			return "当前运行暂时不能追加消息，请等这一轮结束后再发送。"
+		default:
+			return "当前会话暂时不能执行这个操作，请等这一轮结束后再试。"
+		}
 	case "invalid_request", "parse_error":
 		return "请求参数无效。"
 	case "unsupported_method":

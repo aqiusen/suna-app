@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatTimeline } from "./features/chat/ChatTimeline";
 import { Composer, type ComposerHandle } from "./features/chat/Composer";
+import { SLASH_COMMANDS } from "./features/chat/slashCommands";
 import { useRuntimeSession } from "./features/runtime/useRuntimeSession";
 import { SessionSidebar } from "./features/sessions/SessionSidebar";
 import { SessionHeader } from "./features/sessions/SessionHeader";
@@ -22,6 +23,7 @@ import {
   RuntimeSettingsOverlay,
 } from "./features/app/AppOverlays";
 import { LocaleProvider, useT } from "./lib/i18n";
+import type { SkillInfo } from "./lib/runtimeBridge";
 import { useMediaQuery } from "./lib/useMediaQuery";
 import "./styles/tailwind.css";
 
@@ -34,10 +36,19 @@ export function App() {
   );
 }
 
+function quoteSelectionForDraft(text: string): string {
+  const quote = text
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join("\n");
+  return `${quote}\n\n`;
+}
+
 function AppShell() {
   const t = useT();
   const isMobile = useMediaQuery("(max-width: 720px)");
-  const { theme, setTheme, resolvedTheme, toggleTheme } = useTheme();
+  const { theme, setTheme, toggleTheme } = useTheme();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   /** 移动端底部导航：总览 / 任务（工作台）/ 设置。 */
@@ -63,7 +74,7 @@ function AppShell() {
     }, 190);
   };
   const [settingsInitialTab, setSettingsInitialTab] = useState<
-    "connection" | "models"
+    "connection" | "models" | "memory" | "mcp" | "skills" | "security"
   >("connection");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -128,6 +139,33 @@ function AppShell() {
   }
 
   useHashRouting({ attach, connected, selectedId });
+  const loadSkills = useCallback(
+    () => rpc("skill.list", {}).then((result) => result.skills),
+    [rpc],
+  );
+  const toggleSkill = useCallback(
+    async (skill: SkillInfo, enabled: boolean) => {
+      await rpc("skill.set", {
+        name: skill.name,
+        scope: skill.scope,
+        enabled,
+      });
+      return (await rpc("skill.list", {})).skills;
+    },
+    [rpc],
+  );
+  const slashCommands = useMemo(
+    () =>
+      SLASH_COMMANDS.filter((item) => {
+        if (item.cmd === "/skills") return cap("skill");
+        if (item.cmd === "/mcp") return cap("mcp");
+        if (item.cmd === "/memory") return cap("memory");
+        if (item.cmd === "/compact") return cap("session");
+        if (item.cmd === "/model") return canConfig;
+        return true;
+      }),
+    [canConfig, cap],
+  );
 
   const otherWaiting = sessions.filter(
     (session) => session.status === "waiting" && session.id !== selectedId,
@@ -189,6 +227,10 @@ function AppShell() {
             : undefined
         }
         onClose={() => setMobileMenuOpen(false)}
+        onOpenSettings={() =>
+          settingsOpen ? closeSettings() : setSettingsOpen(true)
+        }
+        settingsOpen={settingsOpen}
       />
       {/* 移动端抽屉遮罩：常驻 DOM，is-visible 控制淡入淡出（CSS 过渡）。 */}
       <button
@@ -203,12 +245,9 @@ function AppShell() {
           canControl={canControl}
           handoffRole={handoffRole}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          onOpenSettings={() => setSettingsOpen((value) => !value)}
           onStop={() =>
             void queueSessionOperation(() => rpc("agent.cancel", {}))
           }
-          onToggleTheme={toggleTheme}
-          resolvedTheme={resolvedTheme}
           running={running}
           selected={selected}
           syncing={syncing}
@@ -281,6 +320,16 @@ function AppShell() {
           onConfig={setConfig}
           onReconnect={() => void initialize()}
           onThemeChange={setTheme}
+          onApplySessionModel={
+            selectedId && !observer && !sessionActionsFrozen
+              ? (modelRef) => {
+                  const current =
+                    selected?.model_ref ?? active.snapshot?.session.model_ref;
+                  if (current === modelRef) return Promise.resolve();
+                  return updateModel(modelRef);
+                }
+              : undefined
+          }
           open={settingsOpen}
           refreshMcp={() => void refreshMcp()}
           rpc={rpc}
@@ -331,9 +380,15 @@ function AppShell() {
                   ? undefined
                   : (text) => composerRef.current?.fillDraft(text)
               }
-              pending={
-                active.pendingUsers.length > 0 || Boolean(active.awaitingRun)
+              onQuoteSelection={
+                observer
+                  ? undefined
+                  : (text) =>
+                      composerRef.current?.appendDraft(
+                        quoteSelectionForDraft(text),
+                      )
               }
+              pending={active.queueDispatching || Boolean(active.awaitingRun)}
               phase={active.run?.phase ?? current?.phase}
               flow={active.flow}
               flowTurns={active.flowTurns}
@@ -383,9 +438,40 @@ function AppShell() {
                       })
                   : undefined
               }
+              loadSkills={cap("skill") ? loadSkills : undefined}
+              onSlashCommand={(cmd) => {
+                if (cmd === "/new") {
+                  setCreateOpen(true);
+                  return;
+                }
+                if (cmd === "/compact") {
+                  void queueSessionOperation(() => rpc("session.compact", {}));
+                  return;
+                }
+                if (cmd === "/config") {
+                  setSettingsOpen(true);
+                  return;
+                }
+                if (cmd === "/memory") {
+                  setSettingsInitialTab("memory");
+                  setSettingsOpen(true);
+                  return;
+                }
+                if (cmd === "/mcp") {
+                  setSettingsInitialTab("mcp");
+                  setSettingsOpen(true);
+                  return;
+                }
+                if (cmd === "/model") {
+                  setSettingsInitialTab("models");
+                  setSettingsOpen(true);
+                }
+              }}
               onSubmit={send}
+              onToggleSkill={cap("skill") ? toggleSkill : undefined}
               observer={observer}
               ref={composerRef}
+              slashCommands={slashCommands}
               waiting={selected?.status === "waiting"}
             />
           </>

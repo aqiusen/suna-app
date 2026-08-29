@@ -2,40 +2,54 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { useT } from "../../lib/i18n";
 
-/**
- * 批准方式模式映射。
- *
- * Runtime `guard_mode` 权威取值（来自 backend 确认）：
- *   `readonly` / `ask` / `smart` / `auto`
- * 默认值：`ask`
- *
- * 此映射表与 Runtime contract 对齐；修改前需经 backend/cto 确认。
- */
+/** Runtime Guard 四个 mode，顺序从最严到最松，与 ModeOrDefault 取值对齐。 */
 const GUARD_MODE_MAP: {
-  value: string;
+  value: "readonly" | "ask" | "smart" | "auto";
   labelKey: string;
   descKey: string;
-  danger: boolean;
+  /** restrict=只读拒绝写；open=除硬拦截外放行。都用警示色，避免看成普通选项。 */
+  tone: "restrict" | "default" | "open";
 }[] = [
+  {
+    value: "readonly",
+    labelKey: "chat.approval.readonly",
+    descKey: "chat.approval.readonlyDesc",
+    tone: "restrict",
+  },
   {
     value: "ask",
     labelKey: "chat.approval.ask",
     descKey: "chat.approval.askDesc",
-    danger: false,
+    tone: "default",
   },
   {
     value: "smart",
     labelKey: "chat.approval.smart",
     descKey: "chat.approval.smartDesc",
-    danger: false,
+    tone: "default",
   },
   {
     value: "auto",
     labelKey: "chat.approval.auto",
     descKey: "chat.approval.autoDesc",
-    danger: true,
+    tone: "open",
   },
 ];
+
+/** 非法 / 空值回落到 Runtime 默认 `ask`，禁止再 fallback 成 smart。 */
+function effectiveGuardMode(
+  value?: string,
+): (typeof GUARD_MODE_MAP)[number]["value"] {
+  switch (value) {
+    case "readonly":
+    case "ask":
+    case "smart":
+    case "auto":
+      return value;
+    default:
+      return "ask";
+  }
+}
 
 type ComposerApprovalModeProps = {
   /** 当前 guard_mode 值（从 config.get 来的权威值）。 */
@@ -57,16 +71,12 @@ export function ComposerApprovalMode({
   const popoverRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  // 当前是否为 readonly 受限模式。
-  const isReadonly = value === "readonly";
-
-  // 找出当前有效模式（readonly 时无匹配）。
-  const currentMode = GUARD_MODE_MAP.find((m) => m.value === value);
-  const currentLabel = currentMode
-    ? t(currentMode.labelKey)
-    : isReadonly
-      ? t("chat.approval.readonly")
-      : t("chat.approval.smart");
+  const currentValue = effectiveGuardMode(value);
+  const currentMode =
+    GUARD_MODE_MAP.find((mode) => mode.value === currentValue) ??
+    GUARD_MODE_MAP[1];
+  const currentLabel = t(currentMode.labelKey);
+  const isReadonly = currentValue === "readonly";
 
   // 关闭 popover。
   const close = useCallback(() => {
@@ -115,7 +125,8 @@ export function ComposerApprovalMode({
     [onSave, saving, close, t],
   );
 
-  const canSave = Boolean(onSave) && !disabled && !isReadonly;
+  const canSave = Boolean(onSave) && !disabled;
+  const warnTrigger = currentMode.tone !== "default";
 
   return (
     <div className="relative">
@@ -123,7 +134,7 @@ export function ComposerApprovalMode({
         aria-expanded={open}
         aria-label={t("chat.approvalMode")}
         className={`inline-flex h-8 cursor-pointer items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45 ${
-          isReadonly
+          warnTrigger
             ? "border-rose/20 bg-rose-soft/50 text-rose"
             : "border-line bg-surface-subtle text-ink-soft hover:bg-surface-raised hover:text-ink"
         }`}
@@ -136,35 +147,21 @@ export function ComposerApprovalMode({
       >
         <Icon name={isReadonly ? "warning" : "shield"} size={12} />
         {currentLabel}
-        {!isReadonly && (
-          <Icon className="text-ink-muted" name="chevron-down" size={11} />
-        )}
+        <Icon className="text-ink-muted" name="chevron-down" size={11} />
       </button>
       {open && (
         <div
           className="absolute bottom-full left-0 z-50 mb-2 w-[330px] animate-[panel-pop_160ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-xl border border-line bg-surface-solid py-2 shadow-lg"
           ref={popoverRef}
         >
-          {/* readonly 说明行 */}
-          {isReadonly && (
-            <div className="flex items-start gap-3 px-4 py-2.5 text-ink-muted">
-              <Icon
-                className="mt-0.5 shrink-0 text-rose"
-                name="warning"
-                size={14}
-              />
-              <span className="text-[12px] leading-relaxed">
-                {t("chat.approval.readonlyDesc")}
-              </span>
-            </div>
-          )}
           {GUARD_MODE_MAP.map((mode) => {
-            const selected = mode.value === value;
-            const isDanger = mode.danger;
+            const selected = mode.value === currentValue;
+            const warn = mode.tone !== "default";
             return (
               <button
+                aria-pressed={selected}
                 className={`flex w-full cursor-pointer items-start gap-3 px-4 py-2.5 text-left transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-50 ${
-                  isDanger ? "hover:bg-rose/[0.06]" : "hover:bg-surface-subtle"
+                  warn ? "hover:bg-rose/[0.06]" : "hover:bg-surface-subtle"
                 }`}
                 disabled={!canSave || saving}
                 key={mode.value}
@@ -173,23 +170,26 @@ export function ComposerApprovalMode({
               >
                 <span
                   className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-lg ${
-                    isDanger
+                    warn
                       ? "bg-rose-soft text-rose"
                       : "bg-blue-soft text-blue-strong"
                   }`}
                 >
-                  <Icon name="shield" size={13} />
+                  <Icon
+                    name={mode.tone === "restrict" ? "warning" : "shield"}
+                    size={13}
+                  />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span
                     className={`flex items-center justify-between text-[12.5px] font-bold ${
-                      isDanger ? "text-rose" : "text-ink"
+                      warn ? "text-rose" : "text-ink"
                     }`}
                   >
                     {t(mode.labelKey)}
                     {selected && (
                       <Icon
-                        className={isDanger ? "text-rose" : "text-blue-strong"}
+                        className={warn ? "text-rose" : "text-blue-strong"}
                         name="check"
                         size={14}
                       />

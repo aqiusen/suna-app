@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useT } from "../../lib/i18n";
 import type { SettingsTabProps } from "./RuntimeSettings";
 
-/** Guard 模式：面向用户的日常语言（设计 §10.3）。 */
+/** Guard 四个 mode，顺序从最严到最松，与 Runtime ModeOrDefault 对齐。 */
 const GUARD_MODES = [
   {
     value: "readonly",
@@ -15,18 +15,18 @@ const GUARD_MODES = [
     descKey: "security.mode.askDesc",
   },
   {
-    value: "auto",
-    labelKey: "security.mode.auto",
-    descKey: "security.mode.autoDesc",
-  },
-  {
     value: "smart",
     labelKey: "security.mode.smart",
     descKey: "security.mode.smartDesc",
   },
+  {
+    value: "auto",
+    labelKey: "security.mode.auto",
+    descKey: "security.mode.autoDesc",
+  },
 ] as const;
 
-/** 安全 Tab：Guard 确认模式 + 工作目录（设计 §10.3）。 */
+/** 安全 Tab：Guard 模式 + 工作目录。mode 语义与 Runtime plans/04-guard.md 对齐。 */
 export function SecurityTab({ config, onConfig, rpc }: SettingsTabProps) {
   const t = useT();
   const [error, setError] = useState<string>();
@@ -52,7 +52,8 @@ export function SecurityTab({ config, onConfig, rpc }: SettingsTabProps) {
   }
 
   if (!config) return null;
-  const current = config.guard_mode ?? "smart";
+  // Runtime ModeOrDefault 是 ask，禁止把空值显示成 smart。
+  const current = config.guard_mode ?? "ask";
 
   return (
     <div className="grid gap-4">

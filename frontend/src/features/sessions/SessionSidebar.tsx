@@ -33,6 +33,8 @@ export function SessionSidebar({
   onRename,
   onDeleteWorkdir,
   onClose,
+  onOpenSettings,
+  settingsOpen = false,
 }: SessionSidebarProps) {
   const t = useT();
   const [query, setQuery] = useState("");
@@ -347,13 +349,14 @@ export function SessionSidebar({
                     </div>
                   </div>
                   {!isCollapsed && (
-                    <div className="pl-4">
+                    <div className="ml-[30px] border-l border-line pl-2">
                       {group.list.map((session) => (
                         <SessionRow
                           terminalState={terminalStates?.[session.id]}
                           disabled={disabled}
                           joining={session.id === pendingId}
                           key={session.id}
+                          nested
                           onDelete={onDelete ? requestDelete : undefined}
                           onRename={onRename}
                           onSelect={onSelect}
@@ -389,12 +392,12 @@ export function SessionSidebar({
           }}
         />
       )}
-      <div className="mt-auto border-t border-line pt-3">
+      <div className="mt-auto border-t border-line pt-2">
         <button
           aria-label={
             connected ? t("sidebar.connected") : t("sidebar.disconnected")
           }
-          className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[12px] font-bold transition-colors duration-150 hover:bg-surface-subtle disabled:cursor-default disabled:opacity-100 disabled:hover:bg-transparent"
+          className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] font-semibold text-ink-soft transition-colors duration-150 hover:bg-surface-subtle hover:text-ink disabled:cursor-default disabled:opacity-100 disabled:hover:bg-transparent disabled:hover:text-ink-soft"
           disabled={connected || disabled}
           onClick={onReconnect}
           type="button"
@@ -409,14 +412,22 @@ export function SessionSidebar({
             </span>
           )}
         </button>
-        <div className="flex items-center gap-2.5 px-2 py-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-subtle text-[11px] font-semibold text-ink-soft">
-            SU
-          </span>
-          <span className="text-[12px] font-semibold text-ink-soft">
-            {t("sidebar.workspace")}
-          </span>
-        </div>
+        {onOpenSettings && (
+          <button
+            aria-expanded={settingsOpen}
+            aria-haspopup="dialog"
+            className={`mt-0.5 flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-semibold transition-colors duration-150 ${
+              settingsOpen
+                ? "bg-surface-subtle text-ink"
+                : "text-ink-soft hover:bg-surface-subtle hover:text-ink"
+            }`}
+            onClick={onOpenSettings}
+            type="button"
+          >
+            <Icon name="settings" size={16} />
+            {t("nav.settings")}
+          </button>
+        )}
       </div>
     </aside>
   );

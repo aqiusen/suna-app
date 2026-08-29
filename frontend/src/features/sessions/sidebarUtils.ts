@@ -66,4 +66,7 @@ export type SessionSidebarProps = {
   /** 删除该工作目录下所有 Runtime 会话，但不删除用户文件。 */
   onDeleteWorkdir?: (cwd: string) => Promise<boolean>;
   onClose?: () => void;
+  /** Codex 式入口：侧栏左下角打开设置。 */
+  onOpenSettings?: () => void;
+  settingsOpen?: boolean;
 };

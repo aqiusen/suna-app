@@ -8,6 +8,7 @@ import { statusLabels } from "./sidebarUtils";
 export function SessionRow({
   disabled,
   joining,
+  nested = false,
   onDelete,
   onRename,
   onSelect,
@@ -19,6 +20,8 @@ export function SessionRow({
 }: {
   disabled: boolean;
   joining: boolean;
+  /** 位于项目组下时缩进展示，和目录行拉开层级。 */
+  nested?: boolean;
   onDelete?: (id: string) => void;
   onRename?: (id: string) => void;
   onSelect: (id: string) => void;
@@ -45,7 +48,7 @@ export function SessionRow({
       <button
         aria-current={selected ? "page" : undefined}
         aria-label={`${session.title || t("sidebar.untitled")}，${joining ? t("sidebar.opening") : t(statusLabels[session.status])}`}
-        className={`grid w-full cursor-pointer grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-none px-2.5 py-1.5 text-left transition-[background,transform,opacity] duration-180 ${selected ? `bg-blue-soft ${actionPadding} text-ink` : `${actionPadding} text-ink-soft`} hover:bg-surface-subtle active:scale-[0.985] disabled:cursor-wait disabled:opacity-60`}
+        className={`grid w-full cursor-pointer grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-md text-left transition-[background,transform,opacity] duration-180 ${nested ? "px-2 py-1" : "px-2.5 py-1.5"} ${selected ? `bg-blue-soft ${actionPadding} text-ink` : `${actionPadding} text-ink-soft`} hover:bg-surface-subtle active:scale-[0.985] disabled:cursor-wait disabled:opacity-60`}
         disabled={disabled || joining}
         onClick={() => onSelect(session.id)}
         type="button"
@@ -55,7 +58,9 @@ export function SessionRow({
           className={`h-[7px] w-[7px] rounded-full ${session.status === "running" ? "animate-[breathe_2.4s_ease-in-out_infinite] bg-blue shadow-[0_0_0_4px_var(--color-blue-soft)]" : session.status === "waiting" ? "bg-amber" : session.status === "compacting" ? "animate-[breathe_1.8s_ease-in-out_infinite] bg-blue shadow-[0_0_0_3px_var(--color-blue-soft)]" : "bg-ink-muted"}`}
         />
         <span className="grid min-w-0 gap-0.5">
-          <strong className="flex min-w-0 items-center gap-1.5 text-[12px] font-extrabold text-ink">
+          <strong
+            className={`flex min-w-0 items-center gap-1.5 text-[12px] text-ink ${nested ? "font-medium" : "font-semibold"}`}
+          >
             <OverflowMarquee text={session.title || t("sidebar.untitled")} />
             {session.status === "running" || session.status === "compacting" ? (
               <span
