@@ -24,7 +24,7 @@ jobs:
     runs-on: macos-latest
     env:
       APP_VERSION: ${{ inputs.app_version || 'v0.1.0' }}
-      RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.20.1' }}
+      RUNTIME_TAG: ${{ inputs.runtime_tag || 'v0.21.2' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
