@@ -230,7 +230,14 @@ const DICT: Dict = {
     en: "Add to conversation",
   },
   "chat.copySelection": { zh: "复制", en: "Copy" },
+  "chat.copying": { zh: "正在复制", en: "Copying" },
   "chat.selectionCopied": { zh: "已复制", en: "Copied" },
+  "chat.selectedContextCount": {
+    zh: "{count} 条引用",
+    en: "{count} references",
+  },
+  "chat.clearSelectedContext": { zh: "清除引用", en: "Clear references" },
+  "chat.selectedText": { zh: "所选文本：", en: "Selected text:" },
   "chat.copyCode": { zh: "复制代码", en: "Copy code" },
   "chat.copied": { zh: "已复制", en: "Copied" },
   "chat.copyResult": { zh: "复制工具结果", en: "Copy result" },
@@ -245,6 +252,19 @@ const DICT: Dict = {
   "chat.resultTruncated": { zh: "（结果已截断）", en: "(result truncated)" },
   "chat.params": { zh: "参数", en: "Params" },
   "chat.error": { zh: "错误", en: "Error" },
+  "chat.runFailed": { zh: "模型请求失败", en: "Model request failed" },
+  "chat.runFailedGeneric": {
+    zh: "服务器没有返回更多错误信息。",
+    en: "The server did not return more error detail.",
+  },
+  "chat.runFailedModel": {
+    zh: "当前会话选择的模型不可用：{model}",
+    en: "The selected session model is unavailable: {model}",
+  },
+  "chat.runFailedStatus": {
+    zh: "HTTP {status}：",
+    en: "HTTP {status}:",
+  },
   "chat.thinking": { zh: "思考中", en: "Thinking" },
   "chat.viewThinking": { zh: "查看思考过程", en: "View thinking" },
   "chat.collapseThinking": { zh: "收起思考", en: "Collapse thinking" },
@@ -279,14 +299,6 @@ const DICT: Dict = {
     en: "https://example.com/image.png",
   },
   "chat.waitingReply": { zh: "等待你的回答", en: "Waiting for you" },
-  "chat.observerNotice": {
-    zh: "其他客户端正在运行此会话，任务结束后可在此输入",
-    en: "Another client is running this session; type here once it finishes",
-  },
-  "chat.observerPlaceholder": {
-    zh: "其他客户端正在运行此会话，当前仅可查看…",
-    en: "Another client is running this session — view only…",
-  },
   "chat.selectSessionFirst": {
     zh: "请先选择一个会话…",
     en: "Select a session first…",
@@ -342,9 +354,9 @@ const DICT: Dict = {
   "ask.inputPlaceholder": { zh: "输入你的回答", en: "Type your answer" },
   "ask.answer": { zh: "回答", en: "Answer" },
   "ask.send": { zh: "发送", en: "Send" },
-  "decision.otherClient": {
-    zh: "此请求由其他客户端处理；当前窗口仅可查看。",
-    en: "Handled by another client; this window is view-only.",
+  "decision.unavailable": {
+    zh: "此请求暂不可在当前窗口处理。",
+    en: "This request cannot be handled in this window right now.",
   },
   // 活动卡（agent 状态）
   "activity.ask": { zh: "等待你的回答", en: "Waiting for you" },
@@ -492,7 +504,6 @@ const DICT: Dict = {
   "header.toggleDetails": { zh: "打开任务详情", en: "Open details" },
   "header.closeDetails": { zh: "关闭任务详情", en: "Close details" },
   "header.shared": { zh: "共享中", en: "Shared" },
-  "header.joined": { zh: "已加入", en: "Joined" },
   "header.clients": { zh: "个客户端", en: "clients" },
   // 命令面板
   "cmd.searchPlaceholder": {
@@ -776,23 +787,6 @@ const DICT: Dict = {
   "create.titlePlaceholder": { zh: "新任务", en: "New task" },
   "create.creating": { zh: "正在创建…", en: "Creating…" },
   // 状态条
-  "statusbar.observing": {
-    zh: "正在观察运行中的会话",
-    en: "Observing a running session",
-  },
-  "statusbar.otherClient": {
-    zh: "会话正在其他客户端运行",
-    en: "Session running in another client",
-  },
-  "statusbar.canTakeOver": {
-    zh: "任务结束后可接管输入",
-    en: "You can take over when it finishes",
-  },
-  "statusbar.viewOnly": {
-    zh: "当前窗口仅可查看，任务由另一个客户端控制",
-    en: "View-only; another client controls the task",
-  },
-  "statusbar.clients": { zh: "{count} 个客户端", en: "{count} clients" },
   "statusbar.close": { zh: "关闭", en: "Close" },
   // 连接失败面板
   "status.noRuntime.title": {

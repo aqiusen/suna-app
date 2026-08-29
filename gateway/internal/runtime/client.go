@@ -13,9 +13,10 @@ import (
 type ErrorKind string
 
 const (
-	ErrorUnavailable ErrorKind = "unavailable"
-	ErrorProtocol    ErrorKind = "protocol_error"
-	ErrorCapability  ErrorKind = "capability_error"
+	ErrorUnavailable                ErrorKind = "unavailable"
+	ErrorProtocol                   ErrorKind = "protocol_error"
+	ErrorCapability                 ErrorKind = "capability_error"
+	runtimeSessionHandoffCapability           = "session.handoff"
 )
 
 // requiredCatalogMethods 是 Gateway 正常工作所必需的最小方法集。
@@ -155,15 +156,17 @@ func performHello(ctx context.Context, conn net.Conn) (HelloResult, error) {
 		Method  string `json:"method"`
 		Params  struct {
 			Client struct {
-				Name    string `json:"name"`
-				Version string `json:"version"`
-				Type    string `json:"type"`
+				Name         string   `json:"name"`
+				Version      string   `json:"version"`
+				Type         string   `json:"type"`
+				Capabilities []string `json:"capabilities"`
 			} `json:"client"`
 		} `json:"params"`
 	}{JSONRPC: "2.0", ID: 1, Method: "runtime.hello"}
 	request.Params.Client.Name = "suna-app"
 	request.Params.Client.Version = "dev"
 	request.Params.Client.Type = "web_gateway"
+	request.Params.Client.Capabilities = []string{runtimeSessionHandoffCapability}
 
 	payload, err := json.Marshal(request)
 	if err != nil {

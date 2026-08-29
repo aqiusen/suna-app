@@ -179,7 +179,7 @@ export function createNotificationHandler({
             );
         }
         // 运行终态兜底：sessions 目录的 status 可能因 session.updated 通知
-        // 丢失（重连窗口）而卡在 running，导致 observer 误判、输入框禁用；
+        // 丢失（重连窗口）而卡在 running，导致输入区状态误判；
         // 这里直接以 run 事件为准同步置为 idle。
         if (terminal) {
           markSessionIdle(getSelectedId());

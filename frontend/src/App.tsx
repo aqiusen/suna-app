@@ -36,15 +36,6 @@ export function App() {
   );
 }
 
-function quoteSelectionForDraft(text: string): string {
-  const quote = text
-    .trim()
-    .split(/\r?\n/)
-    .map((line) => `> ${line}`)
-    .join("\n");
-  return `${quote}\n\n`;
-}
-
 function AppShell() {
   const t = useT();
   const isMobile = useMediaQuery("(max-width: 720px)");
@@ -96,11 +87,9 @@ function AppShell() {
     syncing,
     error,
     setError,
-    observer,
     running,
     canControl,
     canConfig,
-    handoffRole,
     rpc,
     connected,
     hello,
@@ -124,9 +113,12 @@ function AppShell() {
   const sessionActionsFrozen = syncing || !selectedId;
   const current = active.snapshot?.current_run;
   const canRename = cap("session.update");
+  const otherClients = (selected?.client_count ?? 0) > 1;
+  // 只有真的还有别的窗口在控制这次 run 时才锁输入。单窗口
+  // can_control=false 是 owner 连接更替，不能说成被别人占用。
   const inputBlockedByInteraction = Boolean(
     running &&
-    (!canControl ||
+    ((otherClients && !canControl) ||
       active.ask ||
       active.guard ||
       active.run?.state === "cancelling" ||
@@ -243,7 +235,6 @@ function AppShell() {
       <section className="workspace">
         <SessionHeader
           canControl={canControl}
-          handoffRole={handoffRole}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           onStop={() =>
             void queueSessionOperation(() => rpc("agent.cancel", {}))
@@ -288,10 +279,7 @@ function AppShell() {
         />
         <SessionStatusBars
           error={error}
-          handoffRole={handoffRole}
-          observer={observer}
           onCloseError={() => setError(undefined)}
-          selected={selected}
         />
         <WaitingNotice
           disabled={syncing}
@@ -321,7 +309,7 @@ function AppShell() {
           onReconnect={() => void initialize()}
           onThemeChange={setTheme}
           onApplySessionModel={
-            selectedId && !observer && !sessionActionsFrozen
+            selectedId && !sessionActionsFrozen
               ? (modelRef) => {
                   const current =
                     selected?.model_ref ?? active.snapshot?.session.model_ref;
@@ -358,7 +346,9 @@ function AppShell() {
             <ChatTimeline
               activeTool={active.activeTool}
               ask={active.ask}
-              controlsDisabled={syncing || (running && !canControl)}
+              controlsDisabled={
+                syncing || (running && otherClients && !canControl)
+              }
               guard={active.guard}
               loading={syncing}
               messages={messages}
@@ -374,27 +364,18 @@ function AppShell() {
               }
               onRemoveQueuedMessage={removeQueued}
               onInterruptQueuedMessage={(item) => void interruptQueued(item)}
-              onSuggestion={
-                // 只读模式（observer）下不引导输入：建议卡隐藏，避免填入后无法发送。
-                observer
-                  ? undefined
-                  : (text) => composerRef.current?.fillDraft(text)
-              }
-              onQuoteSelection={
-                observer
-                  ? undefined
-                  : (text) =>
-                      composerRef.current?.appendDraft(
-                        quoteSelectionForDraft(text),
-                      )
+              onSuggestion={(text) => composerRef.current?.fillDraft(text)}
+              onQuoteSelection={(text) =>
+                composerRef.current?.addSelectedContext(text)
               }
               pending={active.queueDispatching || Boolean(active.awaitingRun)}
               phase={active.run?.phase ?? current?.phase}
               flow={active.flow}
               flowTurns={active.flowTurns}
+              run={active.run}
               running={running}
               queuedMessages={active.queuedMessages}
-              queueControlsDisabled={syncing || observer}
+              queueControlsDisabled={syncing}
               sessionId={active.snapshot?.session.id}
               toolSummary={active.toolSummary}
             />
@@ -406,9 +387,7 @@ function AppShell() {
               }
               approvalMode={config?.guard_mode}
               canAttachImageUrl={Boolean(hello?.content_sources.image_url)}
-              disabled={
-                sessionActionsFrozen || observer || inputBlockedByInteraction
-              }
+              disabled={sessionActionsFrozen || inputBlockedByInteraction}
               models={config?.models}
               onApprovalModeChange={
                 canConfig && !sessionActionsFrozen
@@ -423,12 +402,12 @@ function AppShell() {
                   : undefined
               }
               onModelChange={
-                canConfig && !sessionActionsFrozen && !observer
+                canConfig && !sessionActionsFrozen
                   ? (modelRef) => void updateModel(modelRef)
                   : undefined
               }
               onReasoningChange={
-                canConfig && !sessionActionsFrozen && !observer
+                canConfig && !sessionActionsFrozen
                   ? (model) =>
                       rpc("config.set", {
                         action: "upsert_model",
@@ -469,7 +448,6 @@ function AppShell() {
               }}
               onSubmit={send}
               onToggleSkill={cap("skill") ? toggleSkill : undefined}
-              observer={observer}
               ref={composerRef}
               slashCommands={slashCommands}
               waiting={selected?.status === "waiting"}

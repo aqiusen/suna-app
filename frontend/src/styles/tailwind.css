@@ -154,6 +154,10 @@ body {
   border-radius: var(--radius-xs);
 }
 
+.composer-area textarea:focus-visible {
+  box-shadow: none;
+}
+
 /* 统一细滚动条。 */
 * {
   scrollbar-width: thin;
@@ -175,7 +179,7 @@ body {
 
 /* 选中文本使用主题蓝。 */
 ::selection {
-  background: color-mix(in srgb, var(--color-blue) 32%, transparent);
+  background: color-mix(in srgb, var(--color-blue) 52%, transparent);
   color: var(--color-ink);
 }
 
@@ -610,7 +614,7 @@ button {
     }
   }
 
-  /* 中间工作区：顶部栏 / 状态条（observer、error）/ 滚动时间线 / 输入区。 */
+  /* 中间工作区：顶部栏 / 状态条（error）/ 滚动时间线 / 输入区。 */
   .workspace {
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;

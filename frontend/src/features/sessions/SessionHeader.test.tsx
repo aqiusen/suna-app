@@ -13,7 +13,6 @@ function renderHeader(
       <TooltipProvider>
         <SessionHeader
           canControl
-          handoffRole="host"
           onOpenMobileMenu={() => undefined}
           onStop={onStop}
           running

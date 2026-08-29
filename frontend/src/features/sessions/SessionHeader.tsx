@@ -7,7 +7,6 @@ import type { SessionInfo } from "../../lib/runtimeBridge";
 
 type SessionHeaderProps = {
   selected?: SessionInfo;
-  handoffRole: "host" | "guest";
   running: boolean;
   canControl: boolean;
   syncing: boolean;
@@ -19,7 +18,6 @@ type SessionHeaderProps = {
 /** 工作区顶部栏：会话标题、状态徽章与停止。设置入口在侧栏左下角。 */
 export function SessionHeader({
   selected,
-  handoffRole,
   running,
   canControl,
   syncing,
@@ -85,25 +83,16 @@ export function SessionHeader({
                     : t("header.idle")}
               </span>
             )}
-            {selected &&
-              (handoffRole === "guest" || selected.client_count > 1) && (
-                <span
-                  aria-label={
-                    handoffRole === "guest"
-                      ? t("header.joined")
-                      : t("header.shared")
-                  }
-                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-soft px-2 py-0.5 text-[10px] font-bold whitespace-nowrap text-blue-strong"
-                >
-                  <Icon name="users" size={11} />
-                  <span className="max-[720px]:hidden">
-                    {handoffRole === "guest"
-                      ? t("header.joined")
-                      : t("header.shared")}
-                  </span>
-                  {selected.client_count > 1 && `· ${selected.client_count}`}
-                </span>
-              )}
+            {selected && selected.client_count > 1 && (
+              <span
+                aria-label={t("header.shared")}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-soft px-2 py-0.5 text-[10px] font-bold whitespace-nowrap text-blue-strong"
+              >
+                <Icon name="users" size={11} />
+                <span className="max-[720px]:hidden">{t("header.shared")}</span>
+                {`· ${selected.client_count}`}
+              </span>
+            )}
           </div>
           <p
             className="m-0 max-w-[420px] truncate text-[11px] font-medium text-ink-muted max-[720px]:hidden"

@@ -7,6 +7,7 @@ import {
 } from "react";
 import { Icon } from "../../components/Icon";
 import type {
+  AgentRunEvent,
   AskUserEvent,
   FlowSegment,
   GuardConfirmEvent,
@@ -44,6 +45,8 @@ type ChatTimelineProps = {
   running: boolean;
   /** Runtime 阶段（由应用壳提供时）。 */
   phase?: string;
+  /** 当前 run 状态；失败时把 Runtime 返回的错误展示到对话流。 */
+  run?: AgentRunEvent;
   /** 已发送、正在等待 Runtime 响应的用户回合。 */
   pending?: boolean;
   /** 当前正在执行的 Runtime 工具（由应用壳提供时）。 */
@@ -80,6 +83,7 @@ export function ChatTimeline({
   flowTurns = [],
   running,
   phase,
+  run,
   pending,
   activeTool,
   toolSummary,
@@ -133,6 +137,14 @@ export function ChatTimeline({
     setSelectionAction(undefined);
     setSelectionCopied(false);
   };
+  const copySelectedText = async (text: string) => {
+    try {
+      await navigator.clipboard?.writeText(text);
+      setSelectionCopied(true);
+    } catch {
+      // 剪贴板不可用时静默失败，选区仍可用浏览器原生复制。
+    }
+  };
   const updateSelectionAction = () => {
     const root = scrollRef.current;
     const selection = window.getSelection();
@@ -169,16 +181,7 @@ export function ChatTimeline({
       y: Math.max(12, rect.top - 12),
     });
     setSelectionCopied(false);
-  };
-  const copySelection = async () => {
-    const text = selectionAction?.text;
-    if (!text) return;
-    try {
-      await navigator.clipboard?.writeText(text);
-      setSelectionCopied(true);
-    } catch {
-      // 剪贴板不可用时静默失败，选区仍可用浏览器原生复制。
-    }
+    void copySelectedText(text);
   };
   useLayoutEffect(() => {
     // 不同的会话可能恰好包含相同数量的消息：重置时间线而不是继承
@@ -304,6 +307,8 @@ export function ChatTimeline({
     </div>
   );
   const activeTurnId = sortedTurns.at(-1)?.turnId;
+  const runErrorNotice =
+    run?.state === "failed" ? <RunErrorNotice run={run} /> : undefined;
   const activityCard = showActivityCard && (
     <section
       aria-atomic="true"
@@ -359,21 +364,18 @@ export function ChatTimeline({
               {t("chat.addSelectionToConversation")}
             </button>
           )}
-          <button
-            className={`flex cursor-pointer items-center gap-1.5 px-3 py-2 transition-colors duration-150 hover:bg-surface-raised ${onQuoteSelection ? "border-l border-line" : ""}`}
-            onClick={() => void copySelection()}
-            type="button"
+          <span
+            aria-live="polite"
+            className={`flex items-center gap-1.5 px-3 py-2 text-ink-muted ${onQuoteSelection ? "border-l border-line" : ""}`}
           >
             <Icon name={selectionCopied ? "check" : "copy"} size={13} />
-            {selectionCopied
-              ? t("chat.selectionCopied")
-              : t("chat.copySelection")}
-          </button>
+            {selectionCopied ? t("chat.selectionCopied") : t("chat.copying")}
+          </span>
         </div>
       )}
       <section
         aria-label={t("chat.timelineLabel")}
-        className="animate-[message-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both] mx-auto w-[min(720px,calc(100%-48px))] px-0 pt-8 pb-12 max-[720px]:w-[min(100%-28px,640px)] max-[720px]:pt-6 max-[720px]:pb-7"
+        className="animate-[message-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both] mx-auto w-[min(860px,calc(100%-48px))] px-0 pt-8 pb-12 max-[720px]:w-[min(100%-28px,640px)] max-[720px]:pt-6 max-[720px]:pb-7"
         key={sessionId ?? "none"}
       >
         {loading && (
@@ -500,7 +502,7 @@ export function ChatTimeline({
                       </strong>
                     </div>
                     <div
-                      className={`min-w-0 text-[13.5px] leading-[1.78] [overflow-wrap:anywhere] max-[720px]:text-[13px] ${message.role === "user" ? "flex justify-end" : "max-w-[650px] text-ink"}`}
+                      className={`min-w-0 text-[13.5px] leading-[1.78] [overflow-wrap:anywhere] max-[720px]:text-[13px] ${message.role === "user" ? "flex justify-end" : "max-w-[780px] text-ink"}`}
                     >
                       {message.role === "assistant" ? (
                         message.content.length > LONG_MESSAGE_THRESHOLD ? (
@@ -513,13 +515,14 @@ export function ChatTimeline({
                         )
                       ) : (
                         // 用户消息：右对齐浅底块，去渐变与投影，靠位置区分说话人。
-                        <span className="inline-block max-w-[min(640px,100%)] rounded-[14px] bg-surface-subtle px-3.5 py-2.5 text-[13.5px] leading-[1.7] text-ink">
+                        <span className="inline-block max-w-[min(720px,100%)] rounded-xl bg-surface-subtle px-3.5 py-2.5 text-[13.5px] leading-[1.7] text-ink">
                           {message.content}
                         </span>
                       )}
                     </div>
                   </article>
                   {turnFlow.length > 0 && renderFlow(turnFlow)}
+                  {message.id === activeTurnId && runErrorNotice}
                   {message.id === activeTurnId && activityCard}
                 </Fragment>
               );
@@ -536,6 +539,7 @@ export function ChatTimeline({
         )}
         {!loading &&
           renderFlow(flow.filter((_, index) => !anchoredFlow.has(index)))}
+        {!loading && !activeTurnId && runErrorNotice}
         {!loading && !activeTurnId && activityCard}
         {!loading &&
           flow.filter((segment) => segment.kind === "tool").length === 0 &&
@@ -564,5 +568,37 @@ export function ChatTimeline({
         </button>
       )}
     </div>
+  );
+}
+
+function RunErrorNotice({ run }: { run: AgentRunEvent }) {
+  const t = useT();
+  const detail =
+    run.error?.message ??
+    run.message ??
+    (run.run_error?.model_ref
+      ? t("chat.runFailedModel", { model: run.run_error.model_ref })
+      : t("chat.runFailedGeneric"));
+  const status =
+    run.error?.status_code !== undefined
+      ? t("chat.runFailedStatus", { status: String(run.error.status_code) })
+      : "";
+
+  return (
+    <section
+      aria-label={t("chat.runFailed")}
+      className="mb-7 grid max-w-[650px] grid-cols-[26px_minmax(0,1fr)] gap-2.5 rounded-xl border border-rose/30 bg-rose/8 p-3 text-rose"
+      role="alert"
+    >
+      <span className="grid h-[26px] w-[26px] place-items-center rounded-lg bg-surface-solid">
+        <Icon name="warning" size={14} />
+      </span>
+      <span className="grid min-w-0 gap-1">
+        <strong className="text-[12px]">{t("chat.runFailed")}</strong>
+        <span className="text-[12px] leading-relaxed [overflow-wrap:anywhere]">
+          {status ? `${status} ${detail}` : detail}
+        </span>
+      </span>
+    </section>
   );
 }

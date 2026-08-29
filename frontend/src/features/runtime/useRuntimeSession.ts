@@ -48,10 +48,6 @@ export function useRuntimeSession() {
   const [usage, setUsage] = useState<UsagePeriod>();
   const [config, setConfig] = useState<RuntimeConfig>();
   const [syncing, setSyncing] = useState(false);
-  // handoffRole：当前会话中我是 host（创建/拥有）还是 guest（加入别人的）。
-  // idle 会话无法从 Runtime 得知 owner，因此用前端记忆判断。
-  const [handoffRole, setHandoffRole] = useState<"host" | "guest">("host");
-  const hostSessionIdsRef = useRef<Set<string>>(new Set());
   const selectedIdRef = useRef<string | undefined>(undefined);
   const sessionsRef = useRef<SessionInfo[]>([]);
   const activeRef = useRef<ActiveData>(blankActive());
@@ -154,7 +150,7 @@ export function useRuntimeSession() {
   }, []);
   // 运行终态兜底：run 事件到达时直接把目录中 session 置为 idle。
   // 正常路径下 session.updated 通知也会更新目录，但重连窗口内可能
-  // 丢失该通知；以 run 终态事件为准可避免 observer 卡在运行中。
+  // 丢失该通知；以 run 终态事件为准可避免 UI 卡在运行中。
   const markSessionIdle = useCallback((sessionId?: string) => {
     if (!sessionId) return;
     sessionsRevisionRef.current++;
@@ -587,8 +583,6 @@ export function useRuntimeSession() {
           runId: snapshot.current_run?.run_id,
         };
         setSelectedId(id);
-        // 判断当前会话中我的身份：我创建过的会话是 host，否则视为 guest。
-        setHandoffRole(hostSessionIdsRef.current.has(id) ? "host" : "guest");
         const cached = sessionViewsRef.current.get(id);
         setActive({
           snapshot,
@@ -705,10 +699,8 @@ export function useRuntimeSession() {
     setSyncBoundary,
     setError,
     setSelectedId,
-    setHandoffRole,
     scopeRef,
     attachIntentRef,
-    hostSessionIdsRef,
     mergeSession,
     loadSessions,
     toast,
@@ -759,9 +751,6 @@ export function useRuntimeSession() {
     current?.status === "running" ||
     selected?.status === "running";
   const canControl = Boolean(active.run?.can_control ?? current?.can_control);
-  // can_control 只在 run 活跃时有意义；idle 的 attach 客户端可以开始新回合
-  // 与编辑/分离，忙碌操作由 Runtime 仲裁。
-  const observer = Boolean(running && !syncing && !canControl);
 
   return {
     sessions,
@@ -775,13 +764,10 @@ export function useRuntimeSession() {
     syncing,
     error,
     setError,
-    observer,
     running,
     canControl,
     canDelete,
     canConfig,
-    handoffRole,
-    setHandoffRole,
     connect,
     rpc,
     connected,

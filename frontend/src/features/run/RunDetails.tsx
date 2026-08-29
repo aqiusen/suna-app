@@ -267,7 +267,7 @@ export function RunDetails(props: RunDetailsProps) {
               </small>
               {(ask && !ask.can_reply) || (guard && !guard.can_reply) ? (
                 <small className="mt-1 block text-[11px] text-ink-muted">
-                  {t("decision.otherClient")}
+                  {t("decision.unavailable")}
                 </small>
               ) : null}
               {error && (

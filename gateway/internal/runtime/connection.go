@@ -684,15 +684,17 @@ func performConnectionHello(ctx context.Context, conn net.Conn, reader *bufio.Re
 		Method  string `json:"method"`
 		Params  struct {
 			Client struct {
-				Name    string `json:"name"`
-				Version string `json:"version"`
-				Type    string `json:"type"`
+				Name         string   `json:"name"`
+				Version      string   `json:"version"`
+				Type         string   `json:"type"`
+				Capabilities []string `json:"capabilities"`
 			} `json:"client"`
 		} `json:"params"`
 	}{JSONRPC: "2.0", ID: 1, Method: "runtime.hello"}
 	request.Params.Client.Name = config.ClientName
 	request.Params.Client.Version = config.ClientVersion
 	request.Params.Client.Type = config.ClientType
+	request.Params.Client.Capabilities = []string{runtimeSessionHandoffCapability}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, &Error{Kind: ErrorProtocol, Err: fmt.Errorf("runtime handshake could not be created")}

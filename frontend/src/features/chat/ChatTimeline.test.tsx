@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../../components/ui/Tooltip";
 import { LocaleProvider } from "../../lib/i18n";
@@ -84,6 +84,37 @@ describe("ChatTimeline turn ordering", () => {
     expect(screen.getAllByText("你好")).toHaveLength(1);
   });
 
+  it("shows Runtime run failures in the conversation", () => {
+    render(
+      <LocaleProvider>
+        <ChatTimeline
+          flowTurns={[{ flowStart: 0, turnId: "msg-1", runId: "run-1" }]}
+          messages={[{ id: "msg-1", role: "user", content: "用 5.2 试一下" }]}
+          run={{
+            run_id: "run-1",
+            state: "failed",
+            can_control: false,
+            error: {
+              kind: "http",
+              message:
+                "All available accounts are currently rate-limited. Please retry later.",
+              status_code: 429,
+              model: "gpt-5.2",
+            },
+          }}
+          running={false}
+        />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText("Model request failed")).toBeTruthy();
+    expect(
+      screen.getByText(
+        /HTTP 429: All available accounts are currently rate-limited/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("keeps snapshot tool activity collapsed until opened", () => {
     render(
       <LocaleProvider>
@@ -112,8 +143,13 @@ describe("ChatTimeline turn ordering", () => {
     expect(screen.getByText("Status: 200 200 OK | Headers:")).toBeTruthy();
   });
 
-  it("offers selected text as composer context", () => {
+  it("offers selected text as composer context", async () => {
     const onQuoteSelection = vi.fn();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     render(
       <LocaleProvider>
         <ChatTimeline
@@ -139,6 +175,7 @@ describe("ChatTimeline turn ordering", () => {
     } as unknown as Selection);
 
     fireEvent.mouseUp(screen.getByText("select me"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("select me"));
     fireEvent.click(
       screen.getByRole("button", { name: /add to conversation/i }),
     );
@@ -146,7 +183,7 @@ describe("ChatTimeline turn ordering", () => {
     expect(onQuoteSelection).toHaveBeenCalledWith("select me");
   });
 
-  it("copies selected text from the selection popup", async () => {
+  it("copies selected text after selection ends", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -176,11 +213,8 @@ describe("ChatTimeline turn ordering", () => {
     } as unknown as Selection);
 
     fireEvent.mouseUp(screen.getByText("copy me"));
-    fireEvent.click(screen.getByRole("button", { name: /^copy$/i }));
 
-    expect(writeText).toHaveBeenCalledWith("copy me");
-    expect(
-      await screen.findByRole("button", { name: /^copied$/i }),
-    ).toBeTruthy();
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("copy me"));
+    expect(await screen.findByText("Copied")).toBeTruthy();
   });
 });

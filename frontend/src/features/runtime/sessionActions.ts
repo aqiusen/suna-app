@@ -21,10 +21,8 @@ export type SessionActionDeps = {
   setSyncBoundary: (value: boolean) => void;
   setError: (value: string | undefined) => void;
   setSelectedId: (id: string | undefined) => void;
-  setHandoffRole: (role: "host" | "guest") => void;
   scopeRef: { current: Scope | undefined };
   attachIntentRef: { current: number };
-  hostSessionIdsRef: { current: Set<string> };
   mergeSession: (session: SessionInfo) => void;
   loadSessions: () => Promise<{ id: string }[]>;
   toast: (kind: "success" | "info" | "error", message: string) => void;
@@ -48,10 +46,8 @@ export function createSessionActions({
   setSyncBoundary,
   setError,
   setSelectedId,
-  setHandoffRole,
   scopeRef,
   attachIntentRef,
-  hostSessionIdsRef,
   mergeSession,
   loadSessions,
   toast,
@@ -76,8 +72,6 @@ export function createSessionActions({
           runId: snapshot.current_run?.run_id,
         };
         setSelectedId(snapshot.session.id);
-        hostSessionIdsRef.current.add(snapshot.session.id);
-        setHandoffRole("host");
         setActive({
           ...blankActive(),
           snapshot,

@@ -10,7 +10,7 @@ export function LongMessage({ text }: { text: string }) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="markdown-body rounded-[18px] border border-line bg-surface-solid px-4 py-3 shadow-[0_1px_3px_rgba(28,42,72,0.07),inset_0_1px_0_rgba(255,255,255,0.06)]">
+    <div className="markdown-body rounded-xl bg-surface-subtle px-4 py-3">
       {!expanded && (
         <button
           className="mb-2 block cursor-pointer text-[12px] font-bold text-blue-strong transition-opacity duration-150 hover:opacity-75"

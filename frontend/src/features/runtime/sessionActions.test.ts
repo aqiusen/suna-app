@@ -25,7 +25,6 @@ function createHarness() {
     current: { attach: number; sessionId: string; runId?: string } | undefined;
   } = { current: undefined };
   const attachIntentRef = { current: 0 };
-  const hostSessionIdsRef = { current: new Set<string>() };
   const rpc = vi.fn();
   const toast = vi.fn();
   const mergeSession = vi.fn();
@@ -34,7 +33,6 @@ function createHarness() {
   const setSelectedId = vi.fn((id: string | undefined) => {
     selectedId = id;
   });
-  const setHandoffRole = vi.fn();
   const setSyncBoundary = vi.fn();
   const setActive = vi.fn((updater: SetStateAction<ActiveData>) => {
     active = typeof updater === "function" ? updater(active) : updater;
@@ -52,10 +50,8 @@ function createHarness() {
     setSyncBoundary,
     setError,
     setSelectedId,
-    setHandoffRole,
     scopeRef: scopeRef as unknown as SessionActionDeps["scopeRef"],
     attachIntentRef,
-    hostSessionIdsRef,
     mergeSession,
     loadSessions,
     toast,
@@ -81,12 +77,10 @@ function createHarness() {
     loadSessions,
     setError,
     setSelectedId,
-    setHandoffRole,
     setSyncBoundary,
     setActive,
     scopeRef,
     attachIntentRef,
-    hostSessionIdsRef,
     getActive: () => active,
     select: (id: string) => {
       selectedId = id;
@@ -134,8 +128,6 @@ describe("createSessionActions", () => {
       cwd: "/tmp",
       title: "标题",
     });
-    expect(h.setHandoffRole).toHaveBeenCalledWith("host");
-    expect(h.hostSessionIdsRef.current.has("new-1")).toBe(true);
     expect(h.toast).toHaveBeenCalledWith("success", "会话已创建");
     expect(h.scopeRef.current?.sessionId).toBe("new-1");
   });
@@ -162,10 +154,8 @@ describe("createSessionActions", () => {
       setSyncBoundary: h.setSyncBoundary,
       setError: h.setError,
       setSelectedId: h.setSelectedId,
-      setHandoffRole: h.setHandoffRole,
       scopeRef: h.scopeRef as never,
       attachIntentRef: h.attachIntentRef,
-      hostSessionIdsRef: h.hostSessionIdsRef,
       mergeSession: h.mergeSession,
       loadSessions: h.loadSessions,
       toast: h.toast,

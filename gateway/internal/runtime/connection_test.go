@@ -77,6 +77,26 @@ func TestConnectionManagerConnectRequestAndNotification(t *testing.T) {
 			serverDone <- errors.New("runtime.hello was not sent first")
 			return
 		}
+		var helloParams struct {
+			Client struct {
+				Capabilities []string `json:"capabilities"`
+			} `json:"client"`
+		}
+		if err := json.Unmarshal(hello.Params, &helloParams); err != nil {
+			serverDone <- errors.New("runtime.hello params were invalid")
+			return
+		}
+		declaresHandoff := false
+		for _, capability := range helloParams.Client.Capabilities {
+			if capability == runtimeSessionHandoffCapability {
+				declaresHandoff = true
+				break
+			}
+		}
+		if !declaresHandoff {
+			serverDone <- errors.New("runtime.hello did not declare session handoff capability")
+			return
+		}
 		if err := writeTestJSON(conn, testCatalogHello()); err != nil {
 			serverDone <- err
 			return
