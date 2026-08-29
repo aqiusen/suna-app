@@ -79,4 +79,9 @@ describe("SessionSidebar 会话操作", () => {
     fireEvent.click(screen.getByRole("button", { name: /new task/i }));
     expect(onRequestCreate).toHaveBeenCalledWith();
   });
+
+  it("默认展开当前 session 所属项目组", () => {
+    renderSidebar();
+    expect(screen.getAllByText("Demo session")).toHaveLength(2);
+  });
 });

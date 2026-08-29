@@ -18,6 +18,9 @@ import { blankActive } from "./sessionState";
 function createHarness() {
   let active: ActiveData = blankActive();
   let selectedId: string | undefined;
+  let activeRun = false;
+  let frozen = false;
+  let beforeQueueOperation: (() => void) | undefined;
   const scopeRef: {
     current: { attach: number; sessionId: string; runId?: string } | undefined;
   } = { current: undefined };
@@ -38,8 +41,11 @@ function createHarness() {
   });
   const actions = createSessionActions({
     rpc,
-    queueSessionOperation: async <T>(operation: () => Promise<T>) =>
-      operation(),
+    queueSessionOperation: async <T>(operation: () => Promise<T>) => {
+      beforeQueueOperation?.();
+      beforeQueueOperation = undefined;
+      return operation();
+    },
     activeScopeMatches: () => true,
     resetQueuedDeltas: vi.fn(),
     setActive,
@@ -53,8 +59,17 @@ function createHarness() {
     mergeSession,
     loadSessions,
     toast,
-    isSessionActionsFrozen: () => false,
+    isSessionActionsFrozen: () => frozen,
     getSelectedId: () => selectedId,
+    hasActiveRun: () =>
+      activeRun ||
+      Boolean(
+        active.awaitingRun ||
+        active.run?.state === "running" ||
+        active.run?.state === "retrying" ||
+        active.run?.state === "cancelling" ||
+        active.snapshot?.current_run?.status === "running",
+      ),
     isSyncing: () => false,
     canDelete: () => true,
   });
@@ -75,6 +90,15 @@ function createHarness() {
     getActive: () => active,
     select: (id: string) => {
       selectedId = id;
+    },
+    setActiveRun: (value: boolean) => {
+      activeRun = value;
+    },
+    setFrozen: (value: boolean) => {
+      frozen = value;
+    },
+    setBeforeQueueOperation: (callback: () => void) => {
+      beforeQueueOperation = callback;
     },
   };
 }
@@ -147,6 +171,7 @@ describe("createSessionActions", () => {
       toast: h.toast,
       isSessionActionsFrozen: () => true,
       getSelectedId: () => undefined,
+      hasActiveRun: () => false,
       isSyncing: () => false,
       canDelete: () => true,
     });
@@ -167,14 +192,10 @@ describe("createSessionActions", () => {
 
     await h.actions.send([{ type: "text", text: "你好" }]);
 
-    // 发送前 pending 消息已展示。
-    const pendingCalls = h.setActive.mock.calls.filter(
-      (call) =>
-        typeof call[0] === "function" &&
-        (call[0] as (v: ActiveData) => ActiveData)(blankActive()).pendingUsers
-          .length > 0,
-    );
-    expect(pendingCalls.length).toBeGreaterThan(0);
+    // 队首在 RPC 前已经占住稳定时间线槽位。
+    expect(h.getActive().pendingUsers).toEqual([
+      expect.objectContaining({ content: "你好" }),
+    ]);
     // sendMessage 使用消息 id 与 parts。
     const sendCall = h.rpc.mock.calls.find(
       ([method]) => method === "agent.sendMessage",
@@ -186,6 +207,42 @@ describe("createSessionActions", () => {
     expect(h.rpc).not.toHaveBeenCalledWith("session.attach", {
       session_id: "s1",
     });
+    // drain 自己占用的 awaitingRun 绝不能把 idle 发送误判成已有任务。
+    expect(h.getActive().queuedMessages).toEqual([]);
+    expect(h.getActive().awaitingRun).toBe(true);
+  });
+
+  it("removes the FIFO head after the run id binds during sendMessage", async () => {
+    const h = createHarness();
+    h.scopeRef.current = { attach: 1, sessionId: "s1" };
+    h.select("s1");
+    h.setActive((value) => ({ ...value, snapshot: snapshot() }));
+    h.rpc.mockImplementationOnce(async () => {
+      // Runtime 会在 response 前发出 running 通知，前端据此绑定 run_id。
+      h.scopeRef.current = { attach: 1, sessionId: "s1", runId: "run-1" };
+      return { status: "processing" };
+    });
+
+    await h.actions.send([{ type: "text", text: "first" }]);
+
+    expect(h.getActive().queuedMessages).toEqual([]);
+    expect(h.getActive().pendingUsers).toEqual([
+      expect.objectContaining({ content: "first" }),
+    ]);
+    expect(h.getActive().queueDispatching).toBe(false);
+  });
+
+  it("keeps the FIFO item without an error when a run starts before dispatch", async () => {
+    const h = createHarness();
+    h.scopeRef.current = { attach: 1, sessionId: "s1" };
+    h.select("s1");
+    h.setBeforeQueueOperation(() => h.setActiveRun(true));
+
+    await h.actions.send([{ type: "text", text: "next" }]);
+
+    expect(h.getActive().queuedMessages).toHaveLength(1);
+    expect(h.getActive().pendingUsers).toEqual([]);
+    expect(h.setError).not.toHaveBeenCalled();
   });
 
   it("removes pending message when send fails", async () => {
@@ -348,7 +405,7 @@ describe("createSessionActions", () => {
     expect(h.scopeRef.current?.sessionId).toBe("next-1");
   });
 
-  it("sets awaitingRun optimistically when sending", async () => {
+  it("keeps a message in the FIFO until Runtime accepts it", async () => {
     const h = createHarness();
     h.select("s1");
     h.scopeRef.current = { attach: 1, sessionId: "s1" };
@@ -361,10 +418,43 @@ describe("createSessionActions", () => {
         }),
     );
     const pending = h.actions.send([{ type: "text", text: "你好" }]);
-    // 乐观更新已同步执行：awaitingRun=true、pendingUsers 含消息。
-    expect(h.getActive().awaitingRun).toBe(true);
+    // 请求尚未被 Runtime 接受时，队首已经拥有稳定时间线槽位；若失败会回滚。
+    expect(h.getActive().queuedMessages).toHaveLength(1);
     expect(h.getActive().pendingUsers).toHaveLength(1);
     resolveSend!();
     await pending;
+    expect(h.getActive().queuedMessages).toHaveLength(0);
+    expect(h.getActive().pendingUsers).toHaveLength(1);
+    expect(h.getActive().awaitingRun).toBe(true);
+  });
+
+  it("drains a restored FIFO even while session actions are frozen", async () => {
+    const h = createHarness();
+    h.select("s1");
+    h.scopeRef.current = { attach: 1, sessionId: "s1" };
+    h.setFrozen(true);
+    h.setActive((value) => ({
+      ...value,
+      snapshot: snapshot(),
+      queuedMessages: [
+        {
+          id: "m1",
+          content: "你好",
+          parts: [{ type: "text", text: "你好" }],
+        },
+      ],
+    }));
+    h.rpc.mockResolvedValueOnce({ status: "processing" });
+
+    await h.actions.drainQueue();
+
+    expect(h.rpc).toHaveBeenCalledWith(
+      "agent.sendMessage",
+      expect.objectContaining({
+        client_msg_id: "m1",
+        parts: [{ type: "text", text: "你好" }],
+      }),
+    );
+    expect(h.getActive().queuedMessages).toEqual([]);
   });
 });

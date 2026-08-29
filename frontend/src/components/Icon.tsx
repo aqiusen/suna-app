@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  CornerDownRight,
   Database,
   Ellipsis,
   Eye,
@@ -44,6 +45,7 @@ export type IconName =
   | "chevron-right"
   | "close"
   | "copy"
+  | "turn"
   | "database"
   | "ellipsis"
   | "eye"
@@ -78,6 +80,7 @@ const icons: Record<IconName, React.ComponentType<LucideProps>> = {
   "chevron-right": ChevronRight,
   close: X,
   copy: Copy,
+  turn: CornerDownRight,
   database: Database,
   ellipsis: Ellipsis,
   eye: Eye,

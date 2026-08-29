@@ -103,6 +103,28 @@ const DICT: Dict = {
   },
   "sidebar.sessionActions": { zh: "会话操作", en: "Session actions" },
   "sidebar.untitled": { zh: "未命名会话", en: "Untitled session" },
+  "action.steerUnsupported": {
+    zh: "当前 Runtime 不支持运行中消息排队。",
+    en: "This Runtime does not support queuing messages while running.",
+  },
+  "action.steerTextOnly": {
+    zh: "运行中排队仅支持文本消息。",
+    en: "Only text messages can be queued while running.",
+  },
+  "action.runNotQueueable": {
+    zh: "当前执行尚未进入可排队状态，请稍候或先完成当前交互。",
+    en: "The current run is not ready to queue another message yet.",
+  },
+  "action.cancelFailed": {
+    zh: "无法停止当前执行，排队消息仍会保留。",
+    en: "Could not stop the current run. The queued message was kept.",
+  },
+  "chat.queuedMessages": { zh: "排队消息", en: "Queued messages" },
+  "chat.queuedStatus": { zh: "排队中", en: "Queued" },
+  "chat.removeQueuedMessage": {
+    zh: "删除排队消息",
+    en: "Remove queued message",
+  },
   "sidebar.opening": { zh: "正在打开…", en: "Opening…" },
   "group.more": { zh: "目录操作", en: "Directory actions" },
   "group.newSession": { zh: "新建会话", en: "New session" },
@@ -142,6 +164,11 @@ const DICT: Dict = {
   // 工作台
   "chat.sendPlaceholder": { zh: "给 Suna 发送消息…", en: "Message Suna…" },
   "chat.send": { zh: "发送消息", en: "Send message" },
+  "chat.interrupt": {
+    zh: "调整方向：停止当前执行后按此消息继续",
+    en: "Change direction: stop the current run and continue with this message",
+  },
+  "chat.interruptShort": { zh: "调整方向", en: "Redirect" },
   "chat.timelineLabel": { zh: "会话消息", en: "Session messages" },
   "chat.processLabel": { zh: "执行过程", en: "Activity" },
   "chat.empty.title": { zh: "开始一个任务", en: "Start a task" },

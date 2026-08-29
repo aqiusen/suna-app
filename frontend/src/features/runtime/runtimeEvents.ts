@@ -7,6 +7,7 @@ import type {
   ToolFlowItem,
 } from "../../lib/runtimeBridge";
 import { t } from "../../lib/i18n";
+import { appendFlowTurn, messageId } from "./sessionState";
 import type { ActiveData, Scope } from "./sessionState";
 
 /** 单个 run 的时间线工具卡上限：超出丢弃最旧，避免超长 run 累积 DOM。 */
@@ -30,6 +31,15 @@ export type NotificationDeps = {
   getScope: () => Scope | undefined;
   isSyncing: () => boolean;
   getSelectedId: () => string | undefined;
+  /** 供“调整方向”在当前 run 终态后继续发送新的用户消息。 */
+  onRunTerminal?: (
+    runId: string,
+    state: "done" | "failed" | "cancelled",
+  ) => void;
+  /** 权威 run 进入非终态时绑定其作用域，拒绝旧 run 的迟到事件。 */
+  onRunActive?: (runId: string) => void;
+  /** session.updated=idle 是漏收终态通知时的权威收敛信号。 */
+  onSessionIdle?: (runId?: string) => void;
 };
 
 /**
@@ -52,22 +62,57 @@ export function createNotificationHandler({
   getScope,
   isSyncing,
   getSelectedId,
+  onRunTerminal,
+  onRunActive,
+  onSessionIdle,
 }: NotificationDeps) {
   return (event: RuntimeNotification, receivedAt = Date.now()) => {
     if (event.method === "session.updated") {
       mergeSession(event.params.session);
-      if (acceptsSession(event.params.session.id))
-        setActive((value) =>
-          value.snapshot?.session.id === event.params.session.id
-            ? {
-                ...value,
-                snapshot: {
-                  ...value.snapshot,
-                  session: event.params.session,
-                },
-              }
-            : value,
-        );
+      if (acceptsSession(event.params.session.id)) {
+        let reconciled = false;
+        let reconciledRunId: string | undefined;
+        setActive((value) => {
+          if (value.snapshot?.session.id !== event.params.session.id)
+            return value;
+          const staleRun =
+            event.params.session.status === "idle" &&
+            (value.awaitingRun ||
+              value.run?.state === "running" ||
+              value.run?.state === "retrying" ||
+              value.run?.state === "cancelling" ||
+              value.snapshot.current_run?.status !== "idle");
+          reconciled = staleRun;
+          reconciledRunId = staleRun
+            ? (value.run?.run_id ?? value.snapshot.current_run?.run_id)
+            : undefined;
+          return {
+            ...value,
+            snapshot: {
+              ...value.snapshot,
+              session: event.params.session,
+              // Catalog 已权威确认 idle，不能让旧 current_run 继续锁住输入。
+              current_run: staleRun ? undefined : value.snapshot.current_run,
+            },
+            run: staleRun
+              ? value.run
+                ? { ...value.run, state: "done", can_control: false }
+                : undefined
+              : value.run,
+            ask: staleRun ? undefined : value.ask,
+            guard: staleRun ? undefined : value.guard,
+            awaitingRun: staleRun ? undefined : value.awaitingRun,
+            flow: staleRun
+              ? value.flow.map((segment) =>
+                  segment.kind === "assistant" || segment.kind === "reasoning"
+                    ? { ...segment, done: true }
+                    : segment,
+                )
+              : value.flow,
+          };
+        });
+        if (reconciled) onSessionIdle?.(reconciledRunId);
+      }
       return;
     }
     if (event.method === "config.state") {
@@ -80,13 +125,20 @@ export function createNotificationHandler({
       return;
     }
     if (event.method === "agent.delta") {
+      if (!acceptsRun(event.params.run_id)) return;
       queueDelta(event.params.kind, event.params.content, event.params.run_id);
       return;
     }
     if (event.method === "agent.run") {
       if (!acceptsRun(event.params.run_id)) return;
+      const terminal =
+        event.params.state === "done" ||
+        event.params.state === "cancelled" ||
+        event.params.state === "failed";
+      if (!terminal && event.params.run_id) onRunActive?.(event.params.run_id);
       // 终态事件前先提交本帧内积压的 delta，避免最后一段内容重复出现。
       if (event.params.state === "done") flushDeltas();
+      let completedRunId: string | undefined;
       setActive((value) => {
         const next: ActiveData = {
           ...value,
@@ -113,15 +165,25 @@ export function createNotificationHandler({
               }
             : value.snapshot,
         };
+        // 本地 FIFO 在发起 RPC 前已创建 turn；首个非终态 run 事件到达时，
+        // 将 Runtime run_id 固定绑定到该槽位。后续 delta 先经 run_id 过滤，
+        // 再由这个槽位决定展示位置，不能漂到时间线末尾。
+        if (!terminal && event.params.run_id) {
+          const index = value.flowTurns.length - 1;
+          const last = value.flowTurns[index];
+          if (last && !last.runId)
+            next.flowTurns = value.flowTurns.map((turn, turnIndex) =>
+              turnIndex === index
+                ? { ...turn, runId: event.params.run_id }
+                : turn,
+            );
+        }
         // 运行终态兜底：sessions 目录的 status 可能因 session.updated 通知
         // 丢失（重连窗口）而卡在 running，导致 observer 误判、输入框禁用；
         // 这里直接以 run 事件为准同步置为 idle。
-        if (
-          event.params.state === "done" ||
-          event.params.state === "cancelled" ||
-          event.params.state === "failed"
-        ) {
+        if (terminal) {
           markSessionIdle(getSelectedId());
+          completedRunId = event.params.run_id;
         }
         // 叙事流保留：思考/回复段全部标为已结束，工具卡与回复块作为
         // 本轮操作流继续显示在时间线中（不再清空、不再拍平成消息）。
@@ -134,6 +196,13 @@ export function createNotificationHandler({
         }
         return next;
       });
+      // setActive 已先把 run/current_run 收敛为终态。此后才触发 FIFO，
+      // 让 drain 能看到 idle，不能在 updater 内看到上一轮仍 running 的 ref。
+      if (completedRunId)
+        onRunTerminal?.(
+          completedRunId,
+          event.params.state as "done" | "failed" | "cancelled",
+        );
       return;
     }
     if (event.method === "agent.usage") {
@@ -476,29 +545,22 @@ export function createNotificationHandler({
           : undefined);
       if (!content) return;
       setActive((value) => {
-        const pendingIndex = value.pendingUsers.findIndex(
-          (item) => item.content === content,
-        );
+        const id = event.params.client_msg_id ?? messageId();
+        // Runtime 会跳过向 initial sender 回显首条 user_message；后续 applied
+        // steering 则会回显。两类本地消息都必须留在同一追加序列，不能混写
+        // snapshot，否则 snapshot + pending 的拼接会倒置发送顺序。
+        if (
+          value.pendingUsers.some(
+            (item) =>
+              item.id === id ||
+              (!event.params.client_msg_id && item.content === content),
+          )
+        )
+          return value;
         return {
           ...value,
-          pendingUsers:
-            pendingIndex < 0
-              ? value.pendingUsers
-              : value.pendingUsers.filter((_, index) => index !== pendingIndex),
-          snapshot: value.snapshot
-            ? {
-                ...value.snapshot,
-                messages: (value.snapshot.messages ?? []).some(
-                  (message) =>
-                    message.role === "user" && message.content === content,
-                )
-                  ? value.snapshot.messages
-                  : [
-                      ...(value.snapshot.messages ?? []),
-                      { role: "user", content },
-                    ],
-              }
-            : value.snapshot,
+          pendingUsers: [...value.pendingUsers, { id, content }],
+          flowTurns: appendFlowTurn(value, id),
         };
       });
       return;

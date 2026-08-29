@@ -73,6 +73,7 @@ export type CurrentRun = {
   reasoning_buffer?: string;
   waiting_type?: "ask" | "guard";
   can_control: boolean;
+  pending_steering?: SteeringMessage[];
 };
 export type SessionSnapshot = {
   session: SessionInfo;
@@ -109,6 +110,15 @@ export type AgentRunEvent = {
   error?: ModelError;
   run_error?: RunError;
   resume_available?: boolean;
+};
+export type SteeringMessage = {
+  id: string;
+  run_id: string;
+  client_msg_id?: string;
+  state: "queued" | "applied" | "removed" | "rejected";
+  sequence: number;
+  can_control: boolean;
+  parts?: MessagePart[];
 };
 export type AgentUsageEvent = {
   run_id?: string;
@@ -350,6 +360,14 @@ export type RuntimeBridgeMethods = {
     params: { client_msg_id?: string; parts: MessagePart[] };
     result: { status: "processing" };
   };
+  "agent.steer": {
+    params: { run_id: string; client_msg_id: string; parts: MessagePart[] };
+    result: { message: SteeringMessage };
+  };
+  "agent.steerRemove": {
+    params: { run_id: string; id: string };
+    result: { message: SteeringMessage };
+  };
   "agent.resumeRun": {
     params: Record<string, never>;
     result: { status: "processing" };
@@ -423,6 +441,7 @@ export type RuntimeNotifications = {
     content: string;
   };
   "agent.run": AgentRunEvent;
+  "agent.steering": SteeringMessage;
   "agent.usage": AgentUsageEvent;
   "agent.tool_start": ToolStartEvent;
   "agent.tool_guard": ToolGuardEvent;
@@ -430,7 +449,11 @@ export type RuntimeNotifications = {
   "agent.ask_user": AskUserEvent;
   "agent.guard_confirm": GuardConfirmEvent;
   "agent.interaction_resolved": { id: string; session_id?: string };
-  "session.user_message": { session_id?: string; parts?: MessagePart[] };
+  "session.user_message": {
+    session_id?: string;
+    client_msg_id?: string;
+    parts?: MessagePart[];
+  };
   "session.updated": { session: SessionInfo };
   "session.compact_result": CompactResultEvent;
   "config.state": RuntimeConfig;

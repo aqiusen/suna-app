@@ -43,6 +43,7 @@ export const waitingRank: Record<SessionInfo["status"], number> = {
 };
 
 export type SessionSidebarProps = {
+  terminalStates?: Record<string, "success" | "failed">;
   sessions: SessionInfo[];
   selectedId?: string;
   open?: boolean;

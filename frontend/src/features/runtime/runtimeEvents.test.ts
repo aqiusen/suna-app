@@ -44,6 +44,8 @@ function createHarness(
     getScope: vi.fn(() => ({ attach: 1, sessionId: "s1" })),
     isSyncing: vi.fn(() => false),
     getSelectedId: vi.fn(() => "s1"),
+    onRunTerminal: vi.fn(),
+    onSessionIdle: vi.fn(),
   };
   const handler = createNotificationHandler(deps);
   const send = (event: RuntimeNotification, receivedAt?: number) =>
@@ -72,6 +74,15 @@ describe("createNotificationHandler", () => {
       params: { kind: "assistant", content: "你好", run_id: "run-1" },
     });
     expect(deps.queueDelta).toHaveBeenCalledWith("assistant", "你好", "run-1");
+  });
+
+  it("rejects a late agent.delta from a retired run", () => {
+    const { deps, send } = createHarness({ acceptsRun: false });
+    send({
+      method: "agent.delta",
+      params: { kind: "assistant", content: "旧回答", run_id: "run-old" },
+    });
+    expect(deps.queueDelta).not.toHaveBeenCalled();
   });
 
   it("rejects agent.run from a stale run id", () => {
@@ -109,6 +120,7 @@ describe("createNotificationHandler", () => {
     expect(deps.flushDeltas).toHaveBeenCalled();
     // 终态兜底：目录会话置 idle。
     expect(deps.markSessionIdle).toHaveBeenCalledWith("s1");
+    expect(deps.onRunTerminal).toHaveBeenCalledWith("run-1", "done");
     const active = getActive();
     // current_run 状态收敛为 idle。
     expect(active.snapshot?.current_run?.status).toBe("idle");
@@ -146,6 +158,23 @@ describe("createNotificationHandler", () => {
     expect(active.run?.state).toBe("cancelling");
     expect(active.snapshot?.current_run?.status).toBe("running");
     expect(active.snapshot?.current_run?.can_control).toBe(false);
+  });
+
+  it("binds a running Runtime run to the preallocated user turn", () => {
+    const { deps, send, getActive } = createHarness();
+    deps.setActive((value) => ({
+      ...value,
+      flowTurns: [{ flowStart: 0, turnId: "client-message-1" }],
+    }));
+
+    send({
+      method: "agent.run",
+      params: { run_id: "run-1", state: "running", can_control: true },
+    });
+
+    expect(getActive().flowTurns).toEqual([
+      { flowStart: 0, turnId: "client-message-1", runId: "run-1" },
+    ]);
   });
 
   it("marks session idle on failed and exposes run error", () => {
@@ -339,7 +368,38 @@ describe("createNotificationHandler", () => {
     expect(getActive().snapshot?.session.status).toBe("running");
   });
 
-  it("appends user message and removes matching pending entry", () => {
+  it("unblocks a stale active run when Runtime catalog confirms the session is idle", () => {
+    const { deps, send, getActive } = createHarness();
+    deps.setActive((value) => ({
+      ...value,
+      awaitingRun: true,
+      run: { run_id: "run-1", state: "running", can_control: true },
+      snapshot: {
+        session: snapshotSession({ status: "running" }),
+        current_run: { run_id: "run-1", status: "running", can_control: true },
+      },
+      ask: {
+        id: "ask-1",
+        session_id: "s1",
+        question: "continue?",
+        can_reply: true,
+        allow_custom: false,
+      },
+    }));
+    send({
+      method: "session.updated",
+      params: { session: snapshotSession({ status: "idle" }) },
+    });
+
+    const active = getActive();
+    expect(active.snapshot?.current_run).toBeUndefined();
+    expect(active.run?.state).toBe("done");
+    expect(active.awaitingRun).toBeUndefined();
+    expect(active.ask).toBeUndefined();
+    expect(deps.onSessionIdle).toHaveBeenCalledWith("run-1");
+  });
+
+  it("keeps a locally sent user message at its original timeline position", () => {
     const { deps, send, getActive } = createHarness();
     // 预置一条 pending 用户消息（发送后未收到确认时前端先展示）。
     deps.setActive((value) => ({
@@ -355,12 +415,58 @@ describe("createNotificationHandler", () => {
     });
 
     const active = getActive();
-    // 已确认送达：pending 中匹配项移除，消息追加到快照。
-    expect(active.pendingUsers).toHaveLength(0);
-    expect(active.snapshot?.messages).toContainEqual({
-      role: "user",
-      content: "你好",
+    // initial sender 不会收到自己的回显；消息保留在本地序列中，避免被
+    // snapshot 前置后改变顺序。
+    expect(active.pendingUsers).toEqual([{ id: "p1", content: "你好" }]);
+    expect(active.snapshot?.messages).toEqual([]);
+  });
+
+  it("appends applied steering turns after the initial local message", () => {
+    const { deps, send, getActive } = createHarness();
+    deps.setActive((value) => ({
+      ...value,
+      snapshot: { session: snapshotSession(), messages: [] },
+      pendingUsers: [{ id: "initial", content: "A" }],
+      flowTurns: [{ flowStart: 0, turnId: "initial" }],
+      flow: [{ kind: "assistant", id: 1, text: "answer A", done: true }],
+    }));
+
+    send({
+      method: "session.user_message",
+      params: {
+        session_id: "s1",
+        client_msg_id: "steer-b",
+        parts: [{ type: "text", text: "B" }],
+      },
     });
+    deps.setActive((value) => ({
+      ...value,
+      flow: [
+        ...value.flow,
+        { kind: "assistant", id: 2, text: "answer B", done: true },
+      ],
+    }));
+    send({
+      method: "session.user_message",
+      params: {
+        session_id: "s1",
+        client_msg_id: "steer-c",
+        parts: [{ type: "text", text: "C" }],
+      },
+    });
+
+    const active = getActive();
+    expect(active.snapshot?.messages).toEqual([]);
+    expect(active.pendingUsers.map((message) => message.content)).toEqual([
+      "A",
+      "B",
+      "C",
+    ]);
+    expect(active.flowTurns).toEqual([
+      { flowStart: 0, turnId: "initial" },
+      { flowStart: 1, turnId: "steer-b" },
+      { flowStart: 2, turnId: "steer-c" },
+    ]);
   });
 
   it("forwards mcp.updated to the mcp snapshot", () => {

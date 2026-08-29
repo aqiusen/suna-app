@@ -75,6 +75,7 @@ function AppShell() {
   const session = useRuntimeSession();
   const {
     sessions,
+    terminalStates,
     selectedId,
     selected,
     active,
@@ -100,6 +101,8 @@ function AppShell() {
     initialize,
     create,
     send,
+    interruptQueued,
+    removeQueued,
     updateModel,
     rename,
     remove,
@@ -110,6 +113,14 @@ function AppShell() {
   const sessionActionsFrozen = syncing || !selectedId;
   const current = active.snapshot?.current_run;
   const canRename = cap("session.update");
+  const inputBlockedByInteraction = Boolean(
+    running &&
+    (!canControl ||
+      active.ask ||
+      active.guard ||
+      active.run?.state === "cancelling" ||
+      current?.waiting_type),
+  );
   function openRename(target: { id: string; title?: string }) {
     setRenamingSessionId(target.id);
     setTitleDraft(target.title ?? "");
@@ -162,6 +173,7 @@ function AppShell() {
         disabled={syncing}
         selectedId={selectedId}
         sessions={sessions}
+        terminalStates={terminalStates}
         onDelete={cap("session.delete") ? (id) => void remove(id) : undefined}
         onRename={
           canRename
@@ -311,6 +323,8 @@ function AppShell() {
                   rpc("agent.guardReply", { id, decision }),
                 ).then(() => undefined)
               }
+              onRemoveQueuedMessage={removeQueued}
+              onInterruptQueuedMessage={(item) => void interruptQueued(item)}
               onSuggestion={
                 // 只读模式（observer）下不引导输入：建议卡隐藏，避免填入后无法发送。
                 observer
@@ -322,7 +336,10 @@ function AppShell() {
               }
               phase={active.run?.phase ?? current?.phase}
               flow={active.flow}
+              flowTurns={active.flowTurns}
               running={running}
+              queuedMessages={active.queuedMessages}
+              queueControlsDisabled={syncing || observer}
               sessionId={active.snapshot?.session.id}
               toolSummary={active.toolSummary}
             />
@@ -334,7 +351,9 @@ function AppShell() {
               }
               approvalMode={config?.guard_mode}
               canAttachImageUrl={Boolean(hello?.content_sources.image_url)}
-              disabled={sessionActionsFrozen || observer}
+              disabled={
+                sessionActionsFrozen || observer || inputBlockedByInteraction
+              }
               models={config?.models}
               onApprovalModeChange={
                 canConfig && !sessionActionsFrozen

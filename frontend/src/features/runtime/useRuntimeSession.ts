@@ -22,8 +22,15 @@ import { useRuntimeBridge } from "./useRuntimeBridge";
 import { useDeltaQueue } from "./useDeltaQueue";
 import { createNotificationHandler } from "./runtimeEvents";
 import { createSessionActions } from "./sessionActions";
-import { blankActive, flowFromSnapshot } from "./sessionState";
-import type { ActiveData, Scope } from "./sessionState";
+import {
+  appendFlowTurn,
+  blankActive,
+  flowTurnsFromSnapshot,
+  flowFromSnapshot,
+  shouldKeepBackgroundRun,
+  timelineMessages,
+} from "./sessionState";
+import type { ActiveData, QueuedMessage, Scope } from "./sessionState";
 
 /**
  * 会话工作区核心状态 hook：管理 Runtime bridge、会话目录、当前 attach、
@@ -33,6 +40,9 @@ export function useRuntimeSession() {
   const { toast } = useToast();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
+  const [terminalStates, setTerminalStates] = useState<
+    Record<string, "success" | "failed">
+  >({});
   const [active, setActiveState] = useState<ActiveData>(blankActive);
   const [error, setError] = useState<string>();
   const [usage, setUsage] = useState<UsagePeriod>();
@@ -46,8 +56,8 @@ export function useRuntimeSession() {
   const sessionsRef = useRef<SessionInfo[]>([]);
   const activeRef = useRef<ActiveData>(blankActive());
   const backgroundFlowIdRef = useRef(0);
-  // 仅保存当前页面生命周期内每个会话的渲染投影。Runtime 仍是消息、run
-  // 与工具状态的唯一权威；缓存只让用户切回时保留已看到的时间线和滚动上下文。
+  // 仅保存当前页面生命周期内每个会话的临时投影。Runtime 仍是消息与 run
+  // 的唯一权威；切回时只保留尚未发送的本地 FIFO，不能重放已完成的流。
   const sessionViewsRef = useRef(new Map<string, ActiveData>());
   const restoreRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const attachIntentRef = useRef(0);
@@ -68,6 +78,10 @@ export function useRuntimeSession() {
       }
     | undefined
   >(undefined);
+  // Run 已终态后仍可能有网络中滞留的 SSE 分片；没有所属 run 的分片无法
+  // 安全归属，必须拒绝，避免旧回答写进下一回合。
+  const terminalRunIdsRef = useRef(new Set<string>());
+  const drainQueueRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   // 切换可连续发生在 React effect 刷新之前；状态入队时同步更新 ref 和
   // session 缓存，保证下一次切换取得的是最新流，而不是上一个 render 的副本。
@@ -83,6 +97,17 @@ export function useRuntimeSession() {
     },
     [],
   );
+  const bindActiveRun = useCallback((runId: string) => {
+    const scope = scopeRef.current;
+    if (!scope || terminalRunIdsRef.current.has(runId)) return;
+    if (!scope.runId) scopeRef.current = { ...scope, runId };
+  }, []);
+  const retireRun = useCallback((runId: string) => {
+    terminalRunIdsRef.current.add(runId);
+    const scope = scopeRef.current;
+    if (scope?.runId === runId)
+      scopeRef.current = { ...scope, runId: undefined };
+  }, []);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -161,7 +186,9 @@ export function useRuntimeSession() {
     return Boolean(
       !syncingRef.current &&
       scope &&
-      (!runId || !scope.runId || scope.runId === runId),
+      runId &&
+      !terminalRunIdsRef.current.has(runId) &&
+      (!scope.runId || scope.runId === runId),
     );
   }, []);
   const onNotification = useMemo(
@@ -179,6 +206,37 @@ export function useRuntimeSession() {
         getScope: () => scopeRef.current,
         isSyncing: () => syncingRef.current,
         getSelectedId: () => selectedIdRef.current,
+        onRunTerminal: (runId, state) => {
+          retireRun(runId);
+          const sessionId = selectedIdRef.current;
+          if (sessionId)
+            setTerminalStates((value) => ({
+              ...value,
+              [sessionId]: state === "done" ? "success" : "failed",
+            }));
+          void drainQueueRef.current?.();
+        },
+        onRunActive: (runId) => {
+          bindActiveRun(runId);
+          const sessionId = selectedIdRef.current;
+          if (sessionId)
+            setTerminalStates((value) => {
+              const next = { ...value };
+              delete next[sessionId];
+              return next;
+            });
+        },
+        onSessionIdle: (runId) => {
+          // session.updated 是漏收 agent.run 终态后的权威恢复信号。
+          if (runId) retireRun(runId);
+          const sessionId = selectedIdRef.current;
+          if (sessionId)
+            setTerminalStates((value) => ({
+              ...value,
+              [sessionId]: "success",
+            }));
+          void drainQueueRef.current?.();
+        },
       }),
     [
       acceptsRun,
@@ -190,11 +248,14 @@ export function useRuntimeSession() {
       queueDelta,
       setActive,
       setRuntimeConfig,
+      bindActiveRun,
+      retireRun,
     ],
   );
   const createBackgroundNotificationHandler = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, onTerminal?: () => void) => {
       let scope: Scope = { attach: 0, sessionId };
+      const terminalRunIds = new Set<string>();
       const setView: Dispatch<SetStateAction<ActiveData>> = (value) => {
         const current = sessionViewsRef.current.get(sessionId) ?? blankActive();
         sessionViewsRef.current.set(
@@ -206,6 +267,7 @@ export function useRuntimeSession() {
         setActive: setView,
         setConfig: setRuntimeConfig,
         queueDelta: (kind, content, runId) => {
+          if (!runId || terminalRunIds.has(runId)) return;
           if (runId && !scope.runId) scope = { ...scope, runId };
           if (runId && scope.runId !== runId) return;
           setView((value) => {
@@ -233,7 +295,12 @@ export function useRuntimeSession() {
           });
         },
         flushDeltas: () => undefined,
-        acceptsRun: (runId) => !runId || !scope.runId || scope.runId === runId,
+        acceptsRun: (runId) =>
+          Boolean(
+            runId &&
+            !terminalRunIds.has(runId) &&
+            (!scope.runId || scope.runId === runId),
+          ),
         acceptsSession: (id) => id === sessionId,
         mergeSession,
         markSessionIdle: () => markSessionIdle(sessionId),
@@ -241,6 +308,25 @@ export function useRuntimeSession() {
         getScope: () => scope,
         isSyncing: () => false,
         getSelectedId: () => sessionId,
+        onRunTerminal: (runId, state) => {
+          terminalRunIds.add(runId);
+          if (scope.runId === runId) scope = { ...scope, runId: undefined };
+          setTerminalStates((value) => ({
+            ...value,
+            [sessionId]: state === "done" ? "success" : "failed",
+          }));
+          // done / failed / cancelled 都必须继续 drain；前一轮结果不会阻塞后续输入。
+          onTerminal?.();
+        },
+        onRunActive: (runId) => {
+          if (!scope.runId && !terminalRunIds.has(runId))
+            scope = { ...scope, runId };
+          setTerminalStates((value) => {
+            const next = { ...value };
+            delete next[sessionId];
+            return next;
+          });
+        },
       });
     },
     [markSessionIdle, mergeMcp, mergeSession, setRuntimeConfig],
@@ -311,9 +397,55 @@ export function useRuntimeSession() {
         backgroundClientsRef.current.set(sessionId, client);
         try {
           await client.connect();
+          const drainBackgroundQueue = async () => {
+            const current =
+              sessionViewsRef.current.get(sessionId) ?? blankActive();
+            if (current.queueDispatching || current.queuedMessages.length === 0)
+              return;
+            const item: QueuedMessage = current.queuedMessages[0]!;
+            sessionViewsRef.current.set(sessionId, {
+              ...current,
+              queueDispatching: true,
+            });
+            try {
+              await client.rpc("agent.sendMessage", {
+                client_msg_id: item.id,
+                parts: item.parts,
+              });
+              const latest =
+                sessionViewsRef.current.get(sessionId) ?? blankActive();
+              sessionViewsRef.current.set(sessionId, {
+                ...latest,
+                queueDispatching: false,
+                queuedMessages: latest.queuedMessages.filter(
+                  (queued) => queued.id !== item!.id,
+                ),
+                pendingUsers: [
+                  ...latest.pendingUsers,
+                  { id: item.id, content: item.content },
+                ],
+                flowTurns: appendFlowTurn(latest, item.id),
+                awaitingRun: true,
+              });
+            } catch (reason) {
+              const latest =
+                sessionViewsRef.current.get(sessionId) ?? blankActive();
+              sessionViewsRef.current.set(sessionId, {
+                ...latest,
+                queueDispatching: false,
+              });
+              setError(
+                reason instanceof Error ? reason.message : t("chat.sendError"),
+              );
+            }
+          };
           // 先打开事件流再 attach，避免 attach 成功到 SSE 建立之间丢失运行事件。
-          const handleNotification =
-            createBackgroundNotificationHandler(sessionId);
+          const handleNotification = createBackgroundNotificationHandler(
+            sessionId,
+            () => {
+              void drainBackgroundQueue();
+            },
+          );
           client.subscribe(
             (notification, receivedAt) => {
               // 每个后台 bridge 都有独立的渲染投影。它只存在本页内存中，
@@ -325,12 +457,14 @@ export function useRuntimeSession() {
                   notification.params.state === "failed" ||
                   notification.params.state === "cancelled")
               ) {
-                // 运行结束后不再占用一个 attached client。必须在事件回调中
-                // 释放，不能只依赖用户再次打开该会话，否则 idle runtime 永远
-                // 被后台 bridge 保活。
                 markSessionIdle(sessionId);
-                backgroundClientsRef.current.delete(sessionId);
-                void client.disconnect().catch(() => undefined);
+                const view = sessionViewsRef.current.get(sessionId);
+                // 本地队列未 drain 完时保留同一 Runtime connection；否则下条
+                // sendMessage 会失去 attach/owner 语义并重新引入 session_busy。
+                if (!view?.queueDispatching && !view?.queuedMessages.length) {
+                  backgroundClientsRef.current.delete(sessionId);
+                  void client.disconnect().catch(() => undefined);
+                }
               }
             },
             (reason) => setError(reason.message),
@@ -422,14 +556,9 @@ export function useRuntimeSession() {
         (session) => session.id === previousSessionId,
       );
       const previousActive = activeRef.current;
-      const previousRunActive = Boolean(
-        previousSession?.status === "running" ||
-        previousSession?.status === "waiting" ||
-        previousSession?.status === "compacting" ||
-        previousActive.snapshot?.current_run?.status === "running" ||
-        previousActive.run?.state === "running" ||
-        previousActive.run?.state === "retrying" ||
-        previousActive.run?.state === "cancelling",
+      const previousRunActive = shouldKeepBackgroundRun(
+        previousActive,
+        previousSession?.status,
       );
       if (previousSessionId)
         sessionViewsRef.current.set(previousSessionId, previousActive);
@@ -440,6 +569,7 @@ export function useRuntimeSession() {
       setError(undefined);
       setSelectedId(id);
       setActive(blankActive());
+      let drainAfterAttach = false;
       const work = queueSessionOperation(async () => {
         if (intent !== attachIntentRef.current) return;
         if (previousSessionId && previousSessionId !== id && previousRunActive)
@@ -460,23 +590,26 @@ export function useRuntimeSession() {
         // 判断当前会话中我的身份：我创建过的会话是 host，否则视为 guest。
         setHandoffRole(hostSessionIdsRef.current.has(id) ? "host" : "guest");
         const cached = sessionViewsRef.current.get(id);
-        const restoreCachedFlow = canRestoreCachedFlow(cached, snapshot);
         setActive({
           snapshot,
-          // 已结束 run 的 attach 快照不含 current_run；这不是新 run，不能
-          // 用空 flow 覆盖已经看到的完整回复。只有 Runtime 明确给出不同
-          // run_id 时才从快照重新恢复进行中的 buffer。
-          flow: restoreCachedFlow ? cached!.flow : flowFromSnapshot(snapshot),
+          // attach snapshot 的 messages 已含已完成的历史，绝不能与页面缓存的
+          // completed flow 混用。current_run 只恢复尚未落库的实时 buffer；
+          // snapshot 不保证工具事件回放，因此旧工具卡在切回后不保留。
+          flow: flowFromSnapshot(snapshot),
+          flowTurns: flowTurnsFromSnapshot(snapshot),
           toolSummary: snapshot.tool_summary,
-          run: restoreCachedFlow ? cached?.run : undefined,
-          usage: restoreCachedFlow ? cached?.usage : undefined,
-          ask: restoreCachedFlow ? cached?.ask : undefined,
-          guard: restoreCachedFlow ? cached?.guard : undefined,
-          pendingUsers: cached?.pendingUsers ?? [],
-          awaitingRun: restoreCachedFlow ? cached?.awaitingRun : undefined,
+          // attach 是 Runtime 权威 snapshot 的交接点：此前本页临时追加的
+          // user message 此时已由 snapshot 覆盖，不能再拼接一遍。
+          pendingUsers: [],
+          queuedMessages: cached?.queuedMessages ?? [],
+          queueDispatching: false,
         });
         mergeSession(snapshot.session);
         await releaseBackgroundAttachment(id);
+        // 从其他会话切回时，缓存的本地 FIFO 会随 attach 恢复。必须等
+        // sync 边界解除后再 drain：否则 stillAttachedToSession 会把
+        // 这次发送误判成“切换会话”并丢掉队首。
+        drainAfterAttach = !snapshot.current_run;
       });
       return work
         .catch((reason) => {
@@ -495,7 +628,10 @@ export function useRuntimeSession() {
           throw reason;
         })
         .finally(() => {
-          if (intent === attachIntentRef.current) setSyncBoundary(false);
+          if (intent === attachIntentRef.current) {
+            setSyncBoundary(false);
+            if (drainAfterAttach) void drainQueueRef.current?.();
+          }
         });
     },
     [
@@ -578,9 +714,20 @@ export function useRuntimeSession() {
     toast,
     isSessionActionsFrozen: () => syncing || !selectedId || !scopeRef.current,
     getSelectedId: () => selectedIdRef.current,
+    hasActiveRun: () => {
+      const active = activeRef.current;
+      return Boolean(
+        active.awaitingRun ||
+        active.run?.state === "running" ||
+        active.run?.state === "retrying" ||
+        active.run?.state === "cancelling" ||
+        active.snapshot?.current_run?.status === "running",
+      );
+    },
     isSyncing: () => syncingRef.current,
     canDelete: () => cap("session.delete"),
   });
+  drainQueueRef.current = actions.drainQueue;
 
   // Runtime 0.3+ 的 session.updated 会全局广播轻量 Session Catalog 增量
   // （包括未 attach 的客户端），因此无需定时轮询：initialize/restore 已经
@@ -602,13 +749,7 @@ export function useRuntimeSession() {
       active.snapshot?.session,
     [active.snapshot, selectedId, sessions],
   );
-  const messages = useMemo(
-    () => [
-      ...(active.snapshot?.messages ?? []),
-      ...active.pendingUsers.map(({ content }) => ({ role: "user", content })),
-    ],
-    [active.pendingUsers, active.snapshot?.messages],
-  );
+  const messages = useMemo(() => timelineMessages(active), [active]);
   const canDelete = cap("session.delete");
   const canConfig = cap("config");
   const current = active.snapshot?.current_run;
@@ -624,6 +765,7 @@ export function useRuntimeSession() {
 
   return {
     sessions,
+    terminalStates,
     selectedId,
     selected,
     active,
@@ -660,21 +802,6 @@ export function useRuntimeSession() {
 }
 
 export type { RuntimeNotification };
-
-/**
- * Runtime 在 run 结束后不再返回 current_run。此时应复用本页缓存的完整
- * 叙事流；只有 attach 快照明确指向另一个 run 时，缓存才不再适用。
- */
-export function canRestoreCachedFlow(
-  cached: ActiveData | undefined,
-  snapshot: NonNullable<ActiveData["snapshot"]>,
-) {
-  if (!cached?.flow.length) return false;
-  const cachedRunId =
-    cached.run?.run_id ?? cached.snapshot?.current_run?.run_id;
-  const snapshotRunId = snapshot.current_run?.run_id;
-  return !snapshotRunId || cachedRunId === snapshotRunId;
-}
 
 export function normalizeRuntimeConfig(
   value: RuntimeConfig | undefined,

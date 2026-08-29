@@ -1,10 +1,15 @@
-import { useLayoutEffect, useRef, useState, type UIEvent } from "react";
+import {
+  Fragment,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type UIEvent,
+} from "react";
 import { Icon } from "../../components/Icon";
 import type {
   AskUserEvent,
   FlowSegment,
   GuardConfirmEvent,
-  SnapshotMessage,
   ToolSummary,
 } from "../../lib/runtimeBridge";
 import {
@@ -18,7 +23,10 @@ import { DecisionCard } from "./decisionCard";
 import { LONG_MESSAGE_THRESHOLD, LongMessage } from "./longMessage";
 import { SkillCard, SubtaskCard, ToolCard } from "./toolCards";
 import { LazyMarkdown } from "./LazyMarkdown";
+import { QueuedMessages } from "./QueuedMessages";
 import { useT } from "../../lib/i18n";
+import type { QueuedMessage } from "../runtime/sessionState";
+import type { FlowTurn, TimelineMessage } from "../runtime/sessionState";
 
 type ActiveTool = {
   id?: string;
@@ -28,9 +36,11 @@ type ActiveTool = {
 };
 
 type ChatTimelineProps = {
-  messages: SnapshotMessage[];
+  messages: TimelineMessage[];
   /** 本轮 run 的按序叙事流：思考 / 工具 / 回复按到达顺序排列。 */
   flow?: FlowSegment[];
+  /** 每个用户回合在运行流中的起点，按 Runtime 应用顺序提供。 */
+  flowTurns?: FlowTurn[];
   running: boolean;
   /** Runtime 阶段（由应用壳提供时）。 */
   phase?: string;
@@ -56,11 +66,16 @@ type ChatTimelineProps = {
   loading?: boolean;
   /** 空状态建议卡点击：把示例 prompt 交给外层（填入输入框）。 */
   onSuggestion?: (text: string) => void;
+  queuedMessages?: QueuedMessage[];
+  queueControlsDisabled?: boolean;
+  onRemoveQueuedMessage?: (item: QueuedMessage) => void;
+  onInterruptQueuedMessage?: (item: QueuedMessage) => void;
 };
 
 export function ChatTimeline({
   messages,
   flow = [],
+  flowTurns = [],
   running,
   phase,
   pending,
@@ -74,6 +89,10 @@ export function ChatTimeline({
   sessionId,
   loading = false,
   onSuggestion,
+  queuedMessages = [],
+  queueControlsDisabled = false,
+  onRemoveQueuedMessage,
+  onInterruptQueuedMessage,
 }: ChatTimelineProps) {
   const t = useT();
   const [historyWindow, setHistoryWindow] = useState(80);
@@ -85,6 +104,10 @@ export function ChatTimeline({
   );
   const historyStart = Math.max(0, messages.length - historyWindow);
   const visibleMessages = messages.slice(historyStart);
+  // 正在 dispatch 的队首已经进入 pendingUsers / 时间线，不能再标成“排队中”。
+  const waitingMessages = queuedMessages.filter(
+    (item) => !messages.some((message) => message.id === item.id),
+  );
   const scrollToLatest = (behavior: ScrollBehavior = "smooth") => {
     const element = scrollRef.current;
     if (!element) return;
@@ -122,9 +145,11 @@ export function ChatTimeline({
     activeTool?.id,
     activeTool?.status,
     flow,
+    flowTurns,
     messages.length,
     pending,
     phase,
+    queuedMessages,
     running,
     sessionId,
   ]);
@@ -138,6 +163,111 @@ export function ChatTimeline({
   const streamActivity = activityCopy(t, phase, false, activeTool);
   const activity = activityCopy(t, phase, pending, activeTool);
   const toneClass = toneClasses[activity.tone] ?? toneClasses.default;
+  const sortedTurns = [...flowTurns].sort(
+    (left, right) => left.flowStart - right.flowStart,
+  );
+  const anchoredFlow = new Set<number>();
+  const flowForTurn = (turnId: string) => {
+    const turnIndex = sortedTurns.findIndex((turn) => turn.turnId === turnId);
+    if (turnIndex < 0) return [];
+    const start = sortedTurns[turnIndex]!.flowStart;
+    const end = sortedTurns[turnIndex + 1]?.flowStart ?? flow.length;
+    for (let index = start; index < end; index++) anchoredFlow.add(index);
+    return flow.slice(start, end);
+  };
+  const renderFlow = (segments: FlowSegment[]) => (
+    <div aria-label={t("chat.processLabel")} className="space-y-0.5">
+      {segments.map((segment) => {
+        if (segment.kind === "reasoning") {
+          return (
+            <div className="mb-6" key={segment.id}>
+              <ReasoningBlock
+                done={segment.done}
+                running={running && !segment.done}
+                text={segment.text}
+              />
+            </div>
+          );
+        }
+        if (segment.kind === "tool") {
+          return <ToolCard item={segment.item} key={segment.item.id} />;
+        }
+        if (segment.kind === "skill") {
+          return (
+            <SkillCard item={segment.item} key={`skill-${segment.item.name}`} />
+          );
+        }
+        if (segment.kind === "subtask") {
+          return (
+            <SubtaskCard
+              item={segment.item}
+              key={`subtask-${segment.item.id}`}
+            />
+          );
+        }
+        const streaming = !segment.done;
+        return (
+          <article
+            className="arriving mb-6 animate-[message-in_360ms_cubic-bezier(0.2,0.8,0.2,1)_both] [animation-delay:80ms]"
+            key={segment.id}
+          >
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] text-ink-soft">
+              <span className="grid h-[21px] w-[21px] place-items-center rounded-md bg-ink text-white">
+                <Icon name="sparkle" size={14} />
+              </span>
+              <strong className="text-ink">Suna</strong>
+              {streaming && (running || pending) && (
+                <StreamActivity
+                  label={t("chat.replying")}
+                  detail={streamActivity.detail}
+                />
+              )}
+            </div>
+            <div
+              className={`min-w-0 max-w-[650px] text-[13.5px] leading-[1.78] [overflow-wrap:anywhere] ${streaming ? "text-ink whitespace-pre-wrap" : "markdown-body text-ink"}`}
+            >
+              {streaming ? (
+                <>
+                  {segment.text}
+                  <span
+                    aria-hidden="true"
+                    className="ml-[3px] inline-block h-[1em] w-[2px] animate-[stream-blink_1s_steps(1)_infinite] rounded-[1px] bg-blue align-[-0.15em]"
+                  />
+                </>
+              ) : (
+                <LazyMarkdown>{segment.text}</LazyMarkdown>
+              )}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+  const activeTurnId = sortedTurns.at(-1)?.turnId;
+  const activityCard = showActivityCard && (
+    <section
+      aria-atomic="true"
+      aria-live="polite"
+      className={`mb-7 grid max-w-[520px] min-h-[56px] animate-[message-in_360ms_cubic-bezier(0.2,0.8,0.2,1)_both] grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl border p-3 ${toneClass}`}
+      role="status"
+    >
+      <span className="agent-activity-icon grid h-[26px] w-[26px] place-items-center rounded-lg bg-surface-solid">
+        <Icon
+          name={activity.tone === "guard" ? "warning" : "sparkle"}
+          size={14}
+        />
+      </span>
+      <span className="grid min-w-0 gap-0.5">
+        <span className="text-[12px] font-semibold text-ink">
+          {activity.label}
+        </span>
+        <small className="truncate text-[11px] leading-[1.4] text-ink-muted">
+          {activity.detail}
+        </small>
+      </span>
+      <ActivityDots />
+    </section>
+  );
 
   return (
     <div className="conversation-wrap" onScroll={onScroll} ref={scrollRef}>
@@ -227,65 +357,74 @@ export function ChatTimeline({
           </button>
         )}
         {!loading &&
-          visibleMessages.map((message, index) => (
-            <article
-              className={`group mb-8 animate-[message-in_440ms_cubic-bezier(0.2,0.8,0.2,1)_both] max-[720px]:mb-7`}
-              key={`${historyStart + index}-${message.role}`}
-            >
-              <div
-                className={`mb-2 flex items-center gap-1.5 text-[11px] text-ink-soft ${message.role === "user" ? "flex-row-reverse" : ""}`}
-              >
-                <button
-                  aria-label={t("chat.copyMessage")}
-                  className="grid h-6 w-6 animate-[slide-in-right_160ms_cubic-bezier(0.2,0.8,0.2,1)_both] cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-opacity duration-150 hover:bg-surface-subtle hover:text-ink focus:opacity-100 group-hover:opacity-100 max-[720px]:opacity-100"
-                  onClick={() => {
-                    // 剪贴板写入失败静默忽略（非安全上下文等场景）。
-                    void navigator.clipboard
-                      ?.writeText(message.content)
-                      .catch(() => undefined);
-                  }}
-                  type="button"
-                >
-                  <Icon name="copy" size={12} />
-                </button>
-                <span
-                  className={
-                    message.role === "user"
-                      ? "grid h-[21px] w-[21px] place-items-center rounded-md border border-line bg-surface-subtle text-[7px] font-bold text-ink-soft"
-                      : "grid h-[21px] w-[21px] place-items-center rounded-md bg-ink text-white"
-                  }
-                >
-                  {message.role === "user" ? (
-                    t("chat.user")
-                  ) : (
-                    <Icon name="sparkle" size={14} />
-                  )}
-                </span>
-                <strong className="text-ink">
-                  {message.role === "user" ? t("chat.user") : "Suna"}
-                </strong>
-              </div>
-              <div
-                className={`min-w-0 text-[13.5px] leading-[1.78] [overflow-wrap:anywhere] max-[720px]:text-[13px] ${message.role === "user" ? "flex justify-end" : "max-w-[650px] text-ink"}`}
-              >
-                {message.role === "assistant" ? (
-                  message.content.length > LONG_MESSAGE_THRESHOLD ? (
-                    <LongMessage text={message.content} />
-                  ) : (
-                    // 助手消息：Codex 式无气泡——仅靠留白与头像区分，不包卡片。
-                    <div className="markdown-body">
-                      <LazyMarkdown>{message.content}</LazyMarkdown>
+          (() => {
+            return visibleMessages.map((message) => {
+              const turnFlow =
+                message.role === "user" ? flowForTurn(message.id) : [];
+              return (
+                <Fragment key={message.id}>
+                  <article
+                    className={`group mb-8 animate-[message-in_440ms_cubic-bezier(0.2,0.8,0.2,1)_both] max-[720px]:mb-7`}
+                  >
+                    <div
+                      className={`mb-2 flex items-center gap-1.5 text-[11px] text-ink-soft ${message.role === "user" ? "flex-row-reverse" : ""}`}
+                    >
+                      <button
+                        aria-label={t("chat.copyMessage")}
+                        className="grid h-6 w-6 animate-[slide-in-right_160ms_cubic-bezier(0.2,0.8,0.2,1)_both] cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-opacity duration-150 hover:bg-surface-subtle hover:text-ink focus:opacity-100 group-hover:opacity-100 max-[720px]:opacity-100"
+                        onClick={() => {
+                          // 剪贴板写入失败静默忽略（非安全上下文等场景）。
+                          void navigator.clipboard
+                            ?.writeText(message.content)
+                            .catch(() => undefined);
+                        }}
+                        type="button"
+                      >
+                        <Icon name="copy" size={12} />
+                      </button>
+                      <span
+                        className={
+                          message.role === "user"
+                            ? "grid h-[21px] w-[21px] place-items-center rounded-md border border-line bg-surface-subtle text-[7px] font-bold text-ink-soft"
+                            : "grid h-[21px] w-[21px] place-items-center rounded-md bg-ink text-white"
+                        }
+                      >
+                        {message.role === "user" ? (
+                          t("chat.user")
+                        ) : (
+                          <Icon name="sparkle" size={14} />
+                        )}
+                      </span>
+                      <strong className="text-ink">
+                        {message.role === "user" ? t("chat.user") : "Suna"}
+                      </strong>
                     </div>
-                  )
-                ) : (
-                  // 用户消息：右对齐浅底块，去渐变与投影，靠位置区分说话人。
-                  <span className="inline-block max-w-[min(640px,100%)] rounded-[14px] bg-surface-subtle px-3.5 py-2.5 text-[13.5px] leading-[1.7] text-ink">
-                    {message.content}
-                  </span>
-                )}
-              </div>
-            </article>
-          ))}
+                    <div
+                      className={`min-w-0 text-[13.5px] leading-[1.78] [overflow-wrap:anywhere] max-[720px]:text-[13px] ${message.role === "user" ? "flex justify-end" : "max-w-[650px] text-ink"}`}
+                    >
+                      {message.role === "assistant" ? (
+                        message.content.length > LONG_MESSAGE_THRESHOLD ? (
+                          <LongMessage text={message.content} />
+                        ) : (
+                          // 助手消息：Codex 式无气泡——仅靠留白与头像区分，不包卡片。
+                          <div className="markdown-body">
+                            <LazyMarkdown>{message.content}</LazyMarkdown>
+                          </div>
+                        )
+                      ) : (
+                        // 用户消息：右对齐浅底块，去渐变与投影，靠位置区分说话人。
+                        <span className="inline-block max-w-[min(640px,100%)] rounded-[14px] bg-surface-subtle px-3.5 py-2.5 text-[13.5px] leading-[1.7] text-ink">
+                          {message.content}
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                  {turnFlow.length > 0 && renderFlow(turnFlow)}
+                  {message.id === activeTurnId && activityCard}
+                </Fragment>
+              );
+            });
+          })()}
         {!loading && (
           <DecisionCard
             ask={ask}
@@ -295,103 +434,9 @@ export function ChatTimeline({
             onGuardReply={onGuardReply}
           />
         )}
-        {!loading && showActivityCard && (
-          <section
-            aria-atomic="true"
-            aria-live="polite"
-            className={`mb-7 grid max-w-[520px] min-h-[56px] animate-[message-in_360ms_cubic-bezier(0.2,0.8,0.2,1)_both] grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl border p-3 ${toneClass}`}
-            role="status"
-          >
-            <span className="agent-activity-icon grid h-[26px] w-[26px] place-items-center rounded-lg bg-surface-solid">
-              <Icon
-                name={activity.tone === "guard" ? "warning" : "sparkle"}
-                size={14}
-              />
-            </span>
-            <span className="grid min-w-0 gap-0.5">
-              <span className="text-[12px] font-semibold text-ink">
-                {activity.label}
-              </span>
-              <small className="truncate text-[11px] leading-[1.4] text-ink-muted">
-                {activity.detail}
-              </small>
-            </span>
-            <ActivityDots />
-          </section>
-        )}
-        {!loading && flow.length > 0 && (
-          <div aria-label={t("chat.processLabel")} className="space-y-0.5">
-            {flow.map((segment) => {
-              if (segment.kind === "reasoning") {
-                return (
-                  <div className="mb-6" key={segment.id}>
-                    <ReasoningBlock
-                      done={segment.done}
-                      running={running && !segment.done}
-                      text={segment.text}
-                    />
-                  </div>
-                );
-              }
-              if (segment.kind === "tool") {
-                return <ToolCard item={segment.item} key={segment.item.id} />;
-              }
-              if (segment.kind === "skill") {
-                return (
-                  <SkillCard
-                    item={segment.item}
-                    key={`skill-${segment.item.name}`}
-                  />
-                );
-              }
-              if (segment.kind === "subtask") {
-                return (
-                  <SubtaskCard
-                    item={segment.item}
-                    key={`subtask-${segment.item.id}`}
-                  />
-                );
-              }
-              const streaming = !segment.done;
-              return (
-                <article
-                  className="arriving mb-6 animate-[message-in_360ms_cubic-bezier(0.2,0.8,0.2,1)_both] [animation-delay:80ms]"
-                  key={segment.id}
-                >
-                  <div className="mb-2 flex items-center gap-1.5 text-[11px] text-ink-soft">
-                    <span className="grid h-[21px] w-[21px] place-items-center rounded-md bg-ink text-white">
-                      <Icon name="sparkle" size={14} />
-                    </span>
-                    <strong className="text-ink">Suna</strong>
-                    {streaming && (running || pending) && (
-                      <StreamActivity
-                        label={t("chat.replying")}
-                        detail={streamActivity.detail}
-                      />
-                    )}
-                  </div>
-                  <div
-                    className={`min-w-0 max-w-[650px] text-[13.5px] leading-[1.78] [overflow-wrap:anywhere] ${streaming ? "text-ink whitespace-pre-wrap" : "markdown-body text-ink"}`}
-                  >
-                    {/* 流式过程中用纯文本（不解析 Markdown）：避免每帧对
-                        全文重新解析导致 O(n²)；完成后才一次性渲染。 */}
-                    {streaming ? (
-                      <>
-                        {segment.text}
-                        <span
-                          aria-hidden="true"
-                          className="ml-[3px] inline-block h-[1em] w-[2px] animate-[stream-blink_1s_steps(1)_infinite] rounded-[1px] bg-blue align-[-0.15em]"
-                        />
-                      </>
-                    ) : (
-                      <LazyMarkdown>{segment.text}</LazyMarkdown>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
+        {!loading &&
+          renderFlow(flow.filter((_, index) => !anchoredFlow.has(index)))}
+        {!loading && !activeTurnId && activityCard}
         {!loading &&
           flow.filter((segment) => segment.kind === "tool").length === 0 &&
           toolSummary &&
@@ -437,6 +482,17 @@ export function ChatTimeline({
                 </div>
               ))}
             </section>
+          )}
+        {onRemoveQueuedMessage &&
+          onInterruptQueuedMessage &&
+          !loading &&
+          waitingMessages.length > 0 && (
+            <QueuedMessages
+              disabled={queueControlsDisabled}
+              items={waitingMessages}
+              onInterrupt={onInterruptQueuedMessage}
+              onRemove={onRemoveQueuedMessage}
+            />
           )}
       </section>
       {showJumpToLatest && (

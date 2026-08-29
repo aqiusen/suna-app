@@ -18,6 +18,7 @@ import {
 /** 侧栏：Runtime session 列表按工作目录分组，搜索时临时平铺。 */
 export function SessionSidebar({
   sessions,
+  terminalStates,
   selectedId,
   open = false,
   connected,
@@ -165,13 +166,29 @@ export function SessionSidebar({
   const groupsRest = groups.filter((group) => !group.hasWaiting);
   const collapsedInitialized = useRef(false);
 
-  // 每次进入侧栏都从全折叠开始，避免上一次会话留下展开的项目。
+  // 首次加载保持紧凑，但当前 session 的项目组必须展开，确保用户能看见
+  // 当前对话属于哪个项目；其余项目仍保持折叠。
   useEffect(() => {
     if (collapsedInitialized.current || groups.length === 0) return;
     collapsedInitialized.current = true;
     const next = new Set(groups.map((group) => group.cwd));
+    const selected = sessions.find((session) => session.id === selectedId);
+    if (selected) next.delete(workdirPathKey(selected.cwd));
     setCollapsed(next);
-  }, [groups]);
+  }, [groups, selectedId, sessions]);
+
+  // 切换 session 时始终展开它所在项目组，不让选中项藏在折叠目录里。
+  useEffect(() => {
+    const selected = sessions.find((session) => session.id === selectedId);
+    if (!selected) return;
+    const cwd = workdirPathKey(selected.cwd);
+    setCollapsed((value) => {
+      if (!value.has(cwd)) return value;
+      const next = new Set(value);
+      next.delete(cwd);
+      return next;
+    });
+  }, [selectedId, sessions]);
 
   return (
     <aside
@@ -234,6 +251,7 @@ export function SessionSidebar({
         {searching
           ? filtered.map((session) => (
               <SessionRow
+                terminalState={terminalStates?.[session.id]}
                 disabled={disabled}
                 joining={session.id === pendingId}
                 key={session.id}
@@ -332,6 +350,7 @@ export function SessionSidebar({
                     <div className="pl-4">
                       {group.list.map((session) => (
                         <SessionRow
+                          terminalState={terminalStates?.[session.id]}
                           disabled={disabled}
                           joining={session.id === pendingId}
                           key={session.id}

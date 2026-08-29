@@ -77,7 +77,7 @@ func (c *fakeConnection) Close() error {
 	return nil
 }
 
-func TestDefaultAllowedMethodIsExactV03ProtocolAllowlist(t *testing.T) {
+func TestDefaultAllowedMethodIsExactPublicProtocolAllowlist(t *testing.T) {
 	t.Parallel()
 
 	allowed := []string{
@@ -89,6 +89,7 @@ func TestDefaultAllowedMethodIsExactV03ProtocolAllowlist(t *testing.T) {
 		"skill.list", "skill.set",
 		"mcp.list", "mcp.toggle", "mcp.reload",
 		"daemon.status",
+		"agent.steer", "agent.steerRemove",
 	}
 	for _, method := range allowed {
 		if !defaultAllowedMethod(method) {
@@ -239,6 +240,23 @@ func TestServiceRequestAndNotification(t *testing.T) {
 	connection.mu.Unlock()
 	if method != "agent.sendMessage" {
 		t.Fatalf("method = %q", method)
+	}
+	for _, request := range []struct {
+		method string
+		params json.RawMessage
+	}{
+		{"agent.steer", json.RawMessage(`{"session_id":"session","run_id":"run","parts":[{"type":"text","text":"queued"}]}`)},
+		{"agent.steerRemove", json.RawMessage(`{"session_id":"session","run_id":"run","id":"steer"}`)},
+	} {
+		if _, err := service.Request(context.Background(), id, request.method, request.params); err != nil {
+			t.Fatalf("%s: %v", request.method, err)
+		}
+		connection.mu.Lock()
+		method = connection.method
+		connection.mu.Unlock()
+		if method != request.method {
+			t.Fatalf("method = %q, want %q", method, request.method)
+		}
 	}
 	if _, err := service.Request(context.Background(), id, "runtime.hello", nil); !errors.Is(err, ErrMethodNotAllowed) {
 		t.Fatalf("error = %v", err)

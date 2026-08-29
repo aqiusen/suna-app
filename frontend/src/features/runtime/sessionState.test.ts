@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionSnapshot } from "../../lib/runtimeBridge";
-import { blankActive, flowFromSnapshot } from "./sessionState";
+import {
+  blankActive,
+  flowFromSnapshot,
+  shouldKeepBackgroundRun,
+} from "./sessionState";
 
 describe("blankActive", () => {
   it("returns an empty narrative flow and no pending users", () => {
@@ -10,6 +14,29 @@ describe("blankActive", () => {
     expect(active.pendingUsers).toEqual([]);
     expect(active.snapshot).toBeUndefined();
     expect(active.run).toBeUndefined();
+  });
+});
+
+describe("shouldKeepBackgroundRun", () => {
+  it("keeps the background attach while a send is in flight", () => {
+    expect(
+      shouldKeepBackgroundRun({
+        ...blankActive(),
+        queueDispatching: true,
+        pendingUsers: [{ id: "m1", content: "你好" }],
+      }),
+    ).toBe(true);
+    expect(
+      shouldKeepBackgroundRun({
+        ...blankActive(),
+        awaitingRun: true,
+        pendingUsers: [{ id: "m1", content: "你好" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not keep an idle session with no in-flight send", () => {
+    expect(shouldKeepBackgroundRun(blankActive(), "idle")).toBe(false);
   });
 });
 
@@ -72,18 +99,23 @@ describe("flowFromSnapshot", () => {
     expect(flow[0]).toMatchObject({ kind: "reasoning", text: "思考中…" });
   });
 
-  it("returns an empty flow when there is no active run buffer", () => {
+  it("returns an empty flow for an idle attach even when completed history exists", () => {
     const snapshot: SessionSnapshot = {
       session: {
         id: "s1",
         cwd: "/tmp",
-        message_count: 0,
+        message_count: 2,
         created_at: "",
         updated_at: "",
         status: "idle",
         client_count: 1,
       },
+      messages: [
+        { role: "user", content: "first question" },
+        { role: "assistant", content: "completed reply" },
+      ],
     };
+    // 已完成文本属于 snapshot.messages；把它再变成 flow 会在切回会话时重复。
     expect(flowFromSnapshot(snapshot)).toEqual([]);
   });
 });

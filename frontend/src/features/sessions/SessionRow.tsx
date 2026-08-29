@@ -15,6 +15,7 @@ export function SessionRow({
   pinned,
   selected,
   session,
+  terminalState,
 }: {
   disabled: boolean;
   joining: boolean;
@@ -25,6 +26,7 @@ export function SessionRow({
   pinned?: boolean;
   selected: boolean;
   session: SessionInfo;
+  terminalState?: "success" | "failed";
 }) {
   const t = useT();
   const canDeleteSession = session.status === "idle";
@@ -53,8 +55,22 @@ export function SessionRow({
           className={`h-[7px] w-[7px] rounded-full ${session.status === "running" ? "animate-[breathe_2.4s_ease-in-out_infinite] bg-blue shadow-[0_0_0_4px_var(--color-blue-soft)]" : session.status === "waiting" ? "bg-amber" : session.status === "compacting" ? "animate-[breathe_1.8s_ease-in-out_infinite] bg-blue shadow-[0_0_0_3px_var(--color-blue-soft)]" : "bg-ink-muted"}`}
         />
         <span className="grid min-w-0 gap-0.5">
-          <strong className="block min-w-0 text-[12px] font-extrabold text-ink">
+          <strong className="flex min-w-0 items-center gap-1.5 text-[12px] font-extrabold text-ink">
             <OverflowMarquee text={session.title || t("sidebar.untitled")} />
+            {session.status === "running" || session.status === "compacting" ? (
+              <span
+                aria-label={t(statusLabels[session.status])}
+                className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-blue/25 border-t-blue"
+                role="status"
+              />
+            ) : terminalState ? (
+              <span
+                aria-label={
+                  terminalState === "success" ? "任务完成" : "任务失败"
+                }
+                className={`h-2 w-2 shrink-0 rounded-full ${terminalState === "success" ? "bg-green" : "bg-rose"}`}
+              />
+            ) : null}
           </strong>
         </span>
       </button>
