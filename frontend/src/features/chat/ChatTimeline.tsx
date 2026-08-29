@@ -21,7 +21,7 @@ import {
 } from "./activity";
 import { DecisionCard } from "./decisionCard";
 import { LONG_MESSAGE_THRESHOLD, LongMessage } from "./longMessage";
-import { SkillCard, SubtaskCard, ToolCard } from "./toolCards";
+import { SkillCard, SubtaskCard, ToolCard, ToolSummaryCard } from "./toolCards";
 import { LazyMarkdown } from "./LazyMarkdown";
 import { QueuedMessages } from "./QueuedMessages";
 import { useT } from "../../lib/i18n";
@@ -440,49 +440,7 @@ export function ChatTimeline({
         {!loading &&
           flow.filter((segment) => segment.kind === "tool").length === 0 &&
           toolSummary &&
-          toolSummary.total > 0 && (
-            <section className="mb-7 max-w-[520px] animate-[message-in_360ms_cubic-bezier(0.2,0.8,0.2,1)_both] rounded-xl border border-line bg-surface-solid p-3.5">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-[11px] font-semibold text-ink">
-                  <Icon className="text-ink-muted" name="tool" size={13} />
-                  {t("toolSummary.title")}
-                </span>
-                <span className="text-[11px] text-ink-muted">
-                  {t("toolSummary.total", {
-                    total: toolSummary.total,
-                    success: toolSummary.success,
-                  })}
-                  {toolSummary.failed > 0 && (
-                    <span className="text-rose">
-                      {" "}
-                      {t("toolSummary.failed", {
-                        failed: toolSummary.failed,
-                      })}
-                    </span>
-                  )}
-                </span>
-              </div>
-              {toolSummary.recent?.slice(0, 4).map((tool, index) => (
-                <div
-                  className="flex items-center gap-2 border-t border-line/60 py-2 text-[11px] first:border-t-0"
-                  key={`${tool.tool}-${index}`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`h-[6px] w-[6px] shrink-0 rounded-full ${tool.status === "success" ? "bg-green" : tool.status === "failed" ? "bg-rose" : "bg-ink-muted"}`}
-                  />
-                  <code className="shrink-0 font-mono text-[11px] font-semibold text-ink">
-                    {tool.tool}
-                  </code>
-                  {tool.summary && (
-                    <span className="truncate text-ink-muted">
-                      {tool.summary}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </section>
-          )}
+          toolSummary.total > 0 && <ToolSummaryCard summary={toolSummary} />}
         {onRemoveQueuedMessage &&
           onInterruptQueuedMessage &&
           !loading &&

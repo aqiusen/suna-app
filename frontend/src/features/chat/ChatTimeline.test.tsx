@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../../components/ui/Tooltip";
 import { LocaleProvider } from "../../lib/i18n";
@@ -79,5 +79,33 @@ describe("ChatTimeline turn ordering", () => {
     expect(screen.getByText("下一条")).toBeTruthy();
     expect(screen.getByText("Queued")).toBeTruthy();
     expect(screen.getAllByText("你好")).toHaveLength(1);
+  });
+
+  it("keeps snapshot tool activity collapsed until opened", () => {
+    render(
+      <LocaleProvider>
+        <ChatTimeline
+          messages={[]}
+          running={false}
+          toolSummary={{
+            total: 37,
+            success: 36,
+            failed: 1,
+            recent: [
+              {
+                tool: "http",
+                status: "success",
+                summary: "Status: 200 200 OK | Headers:",
+              },
+            ],
+          }}
+        />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText("Tool activity")).toBeTruthy();
+    expect(screen.queryByText("Status: 200 200 OK | Headers:")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /tool activity/i }));
+    expect(screen.getByText("Status: 200 200 OK | Headers:")).toBeTruthy();
   });
 });
