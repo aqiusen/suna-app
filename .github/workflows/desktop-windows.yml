@@ -12,7 +12,7 @@ on:
       runtime_tag:
         description: Suna Runtime GitHub release tag to bundle
         required: true
-        default: v0.20.1
+        default: v0.21.2
 
 permissions:
   contents: read

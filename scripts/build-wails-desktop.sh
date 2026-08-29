@@ -29,6 +29,7 @@ done
 (
   cd "$ROOT_DIR/gateway"
   wails build \
+    -s \
     -platform "${GOOS_TARGET}/${GOARCH_TARGET}" \
     -ldflags "-s -w -X main.buildVersion=${VERSION}"
 )
