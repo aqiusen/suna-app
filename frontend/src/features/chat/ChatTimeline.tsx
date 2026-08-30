@@ -65,6 +65,8 @@ type ChatTimelineProps = {
   controlsDisabled?: boolean;
   /** Runtime attach 了其他会话时变化，用于重置滚动锚点。 */
   sessionId?: string;
+  /** 用户主动发送消息时递增，用于立即回到最新消息。 */
+  scrollToLatestTrigger?: number;
   /** 会话快照加载中时显示骨架占位。 */
   loading?: boolean;
   /** 空状态建议卡点击：把示例 prompt 交给外层（填入输入框）。 */
@@ -93,6 +95,7 @@ export function ChatTimeline({
   onGuardReply,
   controlsDisabled = false,
   sessionId,
+  scrollToLatestTrigger = 0,
   loading = false,
   onSuggestion,
   onQuoteSelection,
@@ -193,6 +196,9 @@ export function ChatTimeline({
     setHistoryWindow(80);
     requestAnimationFrame(() => scrollToLatest("auto"));
   }, [sessionId]);
+  useLayoutEffect(() => {
+    requestAnimationFrame(() => scrollToLatest("auto"));
+  }, [scrollToLatestTrigger]);
   useLayoutEffect(() => {
     const anchor = historyAnchorRef.current;
     const element = scrollRef.current;

@@ -356,6 +356,8 @@ export function createSessionActions({
             snapshot,
             flow: flowFromSnapshot(snapshot),
             toolSummary: snapshot.tool_summary,
+            ask: snapshot.current_run?.pending_ask,
+            guard: snapshot.current_run?.pending_guard,
           });
           mergeSession(snapshot.session);
         }
@@ -416,6 +418,8 @@ export function createSessionActions({
             snapshot,
             flow: flowFromSnapshot(snapshot),
             toolSummary: snapshot.tool_summary,
+            ask: snapshot.current_run?.pending_ask,
+            guard: snapshot.current_run?.pending_guard,
           });
           mergeSession(snapshot.session);
         }

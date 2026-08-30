@@ -592,6 +592,8 @@ export function useRuntimeSession() {
           flow: flowFromSnapshot(snapshot),
           flowTurns: flowTurnsFromSnapshot(snapshot),
           toolSummary: snapshot.tool_summary,
+          ask: snapshot.current_run?.pending_ask,
+          guard: snapshot.current_run?.pending_guard,
           // attach 是 Runtime 权威 snapshot 的交接点：此前本页临时追加的
           // user message 此时已由 snapshot 覆盖，不能再拼接一遍。
           pendingUsers: [],

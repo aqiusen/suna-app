@@ -74,6 +74,8 @@ export type CurrentRun = {
   waiting_type?: "ask" | "guard";
   can_control: boolean;
   pending_steering?: SteeringMessage[];
+  pending_ask?: AskUserEvent;
+  pending_guard?: GuardConfirmEvent;
 };
 export type SessionSnapshot = {
   session: SessionInfo;

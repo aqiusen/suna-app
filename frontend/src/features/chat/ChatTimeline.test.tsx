@@ -84,6 +84,48 @@ describe("ChatTimeline turn ordering", () => {
     expect(screen.getAllByText("你好")).toHaveLength(1);
   });
 
+  it("jumps to the latest message when send requests it", async () => {
+    const { container, rerender } = render(
+      <LocaleProvider>
+        <ChatTimeline
+          messages={[{ id: "msg-1", role: "user", content: "first" }]}
+          running={false}
+          scrollToLatestTrigger={0}
+        />
+      </LocaleProvider>,
+    );
+    const scrollBox = container.querySelector(".conversation-wrap");
+    if (!(scrollBox instanceof HTMLElement))
+      throw new Error("missing timeline");
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 300 },
+      scrollHeight: { configurable: true, value: 1000 },
+      scrollTop: { configurable: true, value: 100 },
+    });
+    fireEvent.scroll(scrollBox);
+    vi.mocked(HTMLElement.prototype.scrollTo).mockClear();
+
+    rerender(
+      <LocaleProvider>
+        <ChatTimeline
+          messages={[
+            { id: "msg-1", role: "user", content: "first" },
+            { id: "msg-2", role: "user", content: "second" },
+          ]}
+          running={false}
+          scrollToLatestTrigger={1}
+        />
+      </LocaleProvider>,
+    );
+
+    await waitFor(() =>
+      expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
+        top: 1000,
+        behavior: "auto",
+      }),
+    );
+  });
+
   it("shows Runtime run failures in the conversation", () => {
     render(
       <LocaleProvider>

@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "wails:dev": "cd ../gateway && SUNA_RUNTIME=/Users/qiusen/Downloads/suna wails dev",
+    "wails:dev:llm-debug": "cd ../gateway && SUNA_LLM_DEBUG=1 SUNA_RUNTIME=/Users/qiusen/Downloads/suna wails dev",
     "wails:dev:force": "cd ../gateway && SUNA_RUNTIME=/Users/qiusen/Downloads/suna wails dev -forcebuild",
     "build": "vite build",
     "format": "prettier --write .",

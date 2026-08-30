@@ -71,6 +71,7 @@ function AppShell() {
   const [titleDraft, setTitleDraft] = useState("");
   const [renamingSessionId, setRenamingSessionId] = useState<string>();
   const [commandOpen, setCommandOpen] = useState(false);
+  const [scrollToLatestTrigger, setScrollToLatestTrigger] = useState(0);
   useGlobalShortcuts({ setCommandOpen, setCreateOpen, setSettingsOpen });
 
   const composerRef = useRef<ComposerHandle>(null);
@@ -374,6 +375,7 @@ function AppShell() {
               flowTurns={active.flowTurns}
               run={active.run}
               running={running}
+              scrollToLatestTrigger={scrollToLatestTrigger}
               queuedMessages={active.queuedMessages}
               queueControlsDisabled={syncing}
               sessionId={active.snapshot?.session.id}
@@ -446,7 +448,11 @@ function AppShell() {
                   setSettingsOpen(true);
                 }
               }}
-              onSubmit={send}
+              onSubmit={async (parts) => {
+                const pendingSend = send(parts);
+                setScrollToLatestTrigger((value) => value + 1);
+                await pendingSend;
+              }}
               onToggleSkill={cap("skill") ? toggleSkill : undefined}
               ref={composerRef}
               slashCommands={slashCommands}
