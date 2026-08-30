@@ -599,32 +599,35 @@ function Field({
         suggestionsOpen &&
         options.length > 0 &&
         onPickSuggestion && (
-          <span className="grid max-h-36 gap-1 overflow-auto rounded-lg border border-line bg-surface-raised p-1">
-            {options.map((item) => (
-              <button
-                className={`flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[12px] font-medium transition-colors duration-100 hover:bg-surface-subtle hover:text-ink ${
-                  item === value
-                    ? "bg-surface-subtle text-ink"
-                    : "text-ink-soft"
-                }`}
-                key={item}
-                onClick={() => {
-                  onPickSuggestion(item);
-                  setSuggestionsOpen(false);
-                }}
-                type="button"
-              >
-                <span className="truncate">{item}</span>
-                {item === value && (
-                  <Icon
-                    className="shrink-0 text-blue-strong"
-                    name="check"
-                    size={13}
-                  />
-                )}
-              </button>
-            ))}
-          </span>
+          <div className="overflow-hidden rounded-lg border border-line bg-surface-raised p-1">
+            {/* 圆角由外壳裁切；滚动列表留在内层，滑块不会侵入菜单边缘。 */}
+            <div className="grid max-h-[calc(9rem-0.5rem)] gap-1 overflow-y-auto pr-0.5">
+              {options.map((item) => (
+                <button
+                  className={`flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-[12px] font-medium transition-colors duration-100 hover:bg-surface-subtle hover:text-ink ${
+                    item === value
+                      ? "bg-surface-subtle text-ink"
+                      : "text-ink-soft"
+                  }`}
+                  key={item}
+                  onClick={() => {
+                    onPickSuggestion(item);
+                    setSuggestionsOpen(false);
+                  }}
+                  type="button"
+                >
+                  <span className="truncate">{item}</span>
+                  {item === value && (
+                    <Icon
+                      className="shrink-0 text-blue-strong"
+                      name="check"
+                      size={13}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
       {hint && (
         <span className="font-medium text-[10.5px] leading-relaxed text-ink-muted">

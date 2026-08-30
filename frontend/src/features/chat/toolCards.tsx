@@ -168,6 +168,9 @@ export function ToolRow({ item }: { item: ToolFlowItem }) {
 export function SkillRow({ item }: { item: SkillFlowItem }) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
+  // Skill 处于加载或校验阶段时，整行保持同一蓝色语义，便于在长对话中
+  // 一眼识别 Agent 当前正在使用的能力；结束后立即回到中性历史记录样式。
+  const active = item.status === "loading" || item.status === "reviewing";
   const statusMeta = {
     loading: {
       dot: "bg-blue animate-pulse",
@@ -184,14 +187,18 @@ export function SkillRow({ item }: { item: SkillFlowItem }) {
     error: { dot: "bg-rose", label: t("skill.error"), text: "text-rose" },
   }[item.status];
   const iconTone = {
-    loading: "text-ink-muted",
-    reviewing: "text-ink-muted",
+    loading: "text-blue-strong",
+    reviewing: "text-blue-strong",
     loaded: "text-ink-muted",
     done: "text-ink-muted",
     error: "text-rose",
   }[item.status];
   return (
-    <article className="animate-[message-in_320ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-lg border border-transparent transition-colors duration-150 hover:border-line hover:bg-surface-subtle/60">
+    <article
+      className={`animate-[message-in_320ms_cubic-bezier(0.2,0.8,0.2,1)_both] overflow-hidden rounded-lg border border-transparent transition-colors duration-150 hover:border-line hover:bg-surface-subtle/60 ${
+        active ? "bg-blue/8" : ""
+      }`}
+    >
       <button
         aria-expanded={expanded}
         className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2 py-[6px] text-left disabled:cursor-default"
@@ -206,7 +213,11 @@ export function SkillRow({ item }: { item: SkillFlowItem }) {
         <span className={`shrink-0 ${iconTone}`}>
           <Icon name="book" size={13} />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink">
+        <span
+          className={`min-w-0 flex-1 truncate text-[11.5px] font-medium ${
+            active ? "text-blue-strong" : "text-ink"
+          }`}
+        >
           {t("chat.skill", { name: item.name })}
         </span>
         {item.status !== "loaded" && item.status !== "done" && (

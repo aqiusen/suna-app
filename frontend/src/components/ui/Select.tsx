@@ -34,11 +34,12 @@ export function Select<T extends string>({
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
         <SelectPrimitive.Content
-          className="animate-[panel-pop_160ms_cubic-bezier(0.2,0.8,0.2,1)_both] z-40 max-h-72 overflow-auto rounded-xl border border-line bg-surface-solid p-1 shadow-lg"
+          className="animate-[panel-pop_160ms_cubic-bezier(0.2,0.8,0.2,1)_both] z-40 max-h-72 overflow-hidden rounded-xl border border-line bg-surface-solid p-1 shadow-lg"
           position="popper"
           sideOffset={6}
         >
-          <SelectPrimitive.Viewport>
+          {/* 外层裁切圆角，内层负责滚动，避免 WebKit 滑块贴住菜单边缘。 */}
+          <SelectPrimitive.Viewport className="max-h-[calc(18rem-0.5rem)] overflow-y-auto">
             {options.map((option) => (
               <SelectPrimitive.Item
                 className="relative flex cursor-pointer items-center rounded-lg py-2 pr-8 pl-2.5 text-[13px] text-ink-soft transition-colors duration-100 outline-none data-[highlighted]:bg-blue-soft data-[highlighted]:text-ink data-[disabled]:cursor-not-allowed data-[disabled]:opacity-45"

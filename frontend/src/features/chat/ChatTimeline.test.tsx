@@ -157,6 +157,29 @@ describe("ChatTimeline turn ordering", () => {
     ).toBeTruthy();
   });
 
+  it("highlights an active skill in blue", () => {
+    render(
+      <LocaleProvider>
+        <ChatTimeline
+          flow={[
+            {
+              kind: "skill",
+              item: { name: "agent-browser", status: "loading" },
+            },
+          ]}
+          messages={[]}
+          running
+        />
+      </LocaleProvider>,
+    );
+
+    const skill = screen.getByText("Skill agent-browser");
+    expect(skill.classList.contains("text-blue-strong")).toBe(true);
+    expect(skill.closest("article")?.classList.contains("bg-blue/8")).toBe(
+      true,
+    );
+  });
+
   it("keeps snapshot tool activity collapsed until opened", () => {
     render(
       <LocaleProvider>
