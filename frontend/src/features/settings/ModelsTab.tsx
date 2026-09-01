@@ -18,6 +18,12 @@ type ModelDraft = {
   subtask_for: string;
 };
 
+type PendingModelDiscovery = {
+  provider: string;
+  minSequence: number;
+  cacheKey: string;
+};
+
 const EMPTY_DRAFT: ModelDraft = {
   provider: "",
   protocol: "openai_chat",
@@ -107,6 +113,7 @@ export function ModelsTab({
   config,
   onConfig,
   onApplySessionModel,
+  modelDiscovery,
   rpc,
 }: SettingsTabProps) {
   const t = useT();
@@ -115,12 +122,46 @@ export function ModelsTab({
   const [error, setError] = useState<string>();
   const [discovering, setDiscovering] = useState(false);
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [pendingDiscovery, setPendingDiscovery] =
+    useState<PendingModelDiscovery>();
+
+  useEffect(() => {
+    if (
+      !pendingDiscovery ||
+      !modelDiscovery ||
+      modelDiscovery.sequence <= pendingDiscovery.minSequence ||
+      modelDiscovery.provider !== pendingDiscovery.provider
+    )
+      return;
+
+    setPendingDiscovery(undefined);
+    setDiscovering(false);
+    if (modelDiscovery.error_message) {
+      setError(modelDiscovery.error_message);
+      return;
+    }
+    const models = modelDiscovery.models ?? [];
+    setDiscoveredModels(models);
+    writeModelListCache(pendingDiscovery.cacheKey, models);
+  }, [modelDiscovery, pendingDiscovery]);
+
+  useEffect(() => {
+    if (!pendingDiscovery) return;
+    const timer = window.setTimeout(() => {
+      setPendingDiscovery(undefined);
+      setDiscovering(false);
+      setError(t("models.error.discover"));
+    }, 20_000);
+    return () => window.clearTimeout(timer);
+  }, [pendingDiscovery, t]);
 
   function startEdit(model: ConfigModel | "new") {
     const nextDraft = model === "new" ? EMPTY_DRAFT : fromModel(model);
     setEditing(model);
     setDraft(nextDraft);
     setError(undefined);
+    setPendingDiscovery(undefined);
+    setDiscovering(false);
     setDiscoveredModels(readModelListCache(modelListCacheKey(nextDraft)));
   }
 
@@ -259,16 +300,25 @@ export function ModelsTab({
     }
     setDiscovering(true);
     setError(undefined);
-    try {
-      if (useSavedKey && editing !== "new" && editing !== undefined) {
-        const result = await rpc("config.discoverModels", {
-          model_ref: modelRef(editing),
-        });
-        if (result.error_message) throw new Error(result.error_message);
-        setDiscoveredModels(result.models);
-        writeModelListCache(modelListCacheKey(draft), result.models);
-        return;
+    if (useSavedKey && editing !== "new" && editing !== undefined) {
+      const pending: PendingModelDiscovery = {
+        provider: draft.provider.trim(),
+        minSequence: modelDiscovery?.sequence ?? 0,
+        cacheKey: modelListCacheKey(draft),
+      };
+      setPendingDiscovery(pending);
+      try {
+        await rpc("config.discoverModels", { provider: pending.provider });
+      } catch (reason) {
+        setPendingDiscovery(undefined);
+        setDiscovering(false);
+        setError(
+          reason instanceof Error ? reason.message : t("models.error.discover"),
+        );
       }
+      return;
+    }
+    try {
       const response = await fetch(gatewayPath("/api/v1/models/discover"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },

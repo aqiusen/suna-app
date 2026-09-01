@@ -81,9 +81,8 @@ export function useDeltaQueue({
   const queueDelta = useCallback(
     (kind: "assistant" | "reasoning", content: string, runId?: string) => {
       const scope = getScope();
-      // agent.delta 不带 session ID；bridge 只 attach 一个 Runtime 会话，
-      // 因此发送后首次收到的 run_id 即可建立当前作用域，后续 delta 必须
-      // 与权威作用域匹配（带 run_id 时拒绝来自旧 run 的事件）。
+      // RuntimeEvents 已先按 session_id 过滤；delta 本身可不带 run_id。
+      // 带 run_id 时仍要拒绝旧 run，首次收到时建立当前 run 作用域。
       if (isSyncing() || !scope) return;
       if (runId && scope.runId && scope.runId !== runId) return;
       // 首次收到 run_id 时建立权威作用域：setScope 更新外部状态，

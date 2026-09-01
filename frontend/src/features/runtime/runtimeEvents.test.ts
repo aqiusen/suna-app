@@ -37,7 +37,11 @@ function createHarness(
     queueDelta: vi.fn(),
     flushDeltas: vi.fn(),
     acceptsRun: vi.fn(() => overrides.acceptsRun ?? true),
-    acceptsSession: vi.fn(() => overrides.acceptsSession ?? true),
+    acceptsSession: vi.fn(
+      (sessionId?: string) =>
+        (sessionId === undefined || sessionId.length > 0) &&
+        (overrides.acceptsSession ?? true),
+    ),
     mergeSession: vi.fn(),
     markSessionIdle: vi.fn(),
     mergeMcp: vi.fn(),
@@ -46,6 +50,7 @@ function createHarness(
     getSelectedId: vi.fn(() => "s1"),
     onRunTerminal: vi.fn(),
     onSessionIdle: vi.fn(),
+    onConfigModelsResult: vi.fn(),
   };
   const handler = createNotificationHandler(deps);
   const send = (event: RuntimeNotification, receivedAt?: number) =>
@@ -71,7 +76,12 @@ describe("createNotificationHandler", () => {
     const { deps, send } = createHarness();
     send({
       method: "agent.delta",
-      params: { kind: "assistant", content: "你好", run_id: "run-1" },
+      params: {
+        session_id: "s1",
+        kind: "assistant",
+        content: "你好",
+        run_id: "run-1",
+      },
     });
     expect(deps.queueDelta).toHaveBeenCalledWith("assistant", "你好", "run-1");
   });
@@ -80,9 +90,48 @@ describe("createNotificationHandler", () => {
     const { deps, send } = createHarness({ acceptsRun: false });
     send({
       method: "agent.delta",
-      params: { kind: "assistant", content: "旧回答", run_id: "run-old" },
+      params: {
+        session_id: "s1",
+        kind: "assistant",
+        content: "旧回答",
+        run_id: "run-old",
+      },
     });
     expect(deps.queueDelta).not.toHaveBeenCalled();
+  });
+
+  it("accepts an upstream delta scoped to the active session without run id", () => {
+    const { deps, send } = createHarness();
+    send({
+      method: "agent.delta",
+      params: { session_id: "s1", kind: "assistant", content: "回答" },
+    });
+    expect(deps.queueDelta).toHaveBeenCalledWith(
+      "assistant",
+      "回答",
+      undefined,
+    );
+  });
+
+  it("rejects events for a different session before touching the timeline", () => {
+    const { deps, send } = createHarness({ acceptsSession: false });
+    send({
+      method: "agent.tool_start",
+      params: { session_id: "other", id: "t1", tool: "readfile", params: {} },
+    });
+    expect(deps.setActive).not.toHaveBeenCalled();
+  });
+
+  it("forwards asynchronous model discovery results", () => {
+    const { deps, send } = createHarness();
+    send({
+      method: "config.models_result",
+      params: { provider: "openai", models: ["gpt-5.2"] },
+    });
+    expect(deps.onConfigModelsResult).toHaveBeenCalledWith({
+      provider: "openai",
+      models: ["gpt-5.2"],
+    });
   });
 
   it("rejects agent.run from a stale run id", () => {
@@ -588,13 +637,14 @@ describe("createNotificationHandler", () => {
     const { send, getActive } = createHarness();
     send({
       method: "session.compact_result",
-      params: { running: true },
+      params: { session_id: "s1", running: true },
     });
     expect(getActive().compact?.running).toBe(true);
 
     send({
       method: "session.compact_result",
       params: {
+        session_id: "s1",
         before_tokens: 162000,
         after_tokens: 45000,
         context_window: 1000000,
@@ -614,15 +664,19 @@ describe("createNotificationHandler", () => {
     const { deps, send, getActive } = createHarness();
     send({
       method: "session.compact_result",
-      params: { running: false, error: "context too large" },
+      params: {
+        session_id: "s1",
+        running: false,
+        error: "context too large",
+      },
     });
     expect(getActive().compact?.error).toBe("context too large");
 
-    // 其他会话（getSelectedId 不匹配）时忽略。
-    deps.getSelectedId.mockReturnValue("other");
+    // 上游 Runtime 通过 session_id 标记压缩事件，其他会话不能覆盖当前面板。
+    deps.acceptsSession.mockImplementation((id) => id === "s1");
     send({
       method: "session.compact_result",
-      params: { running: true },
+      params: { session_id: "other", running: true },
     });
     expect(getActive().compact?.running).toBe(false);
   });

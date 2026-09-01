@@ -109,6 +109,7 @@ function AppShell() {
     remove,
     deleteWorkdirSessions,
     mcpServers,
+    modelDiscovery,
     refreshMcp,
   } = session;
   const sessionActionsFrozen = syncing || !selectedId;
@@ -305,6 +306,7 @@ function AppShell() {
           hello={hello}
           initialTab={settingsInitialTab}
           mcpServers={mcpServers}
+          modelDiscovery={modelDiscovery}
           onClose={closeSettings}
           onConfig={setConfig}
           onReconnect={() => void initialize()}

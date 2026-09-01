@@ -14,6 +14,7 @@ import type {
   MCPServerInfo,
   RuntimeConfig,
   RuntimeNotification,
+  RuntimeNotifications,
   SessionInfo,
   UsagePeriod,
 } from "../../lib/runtimeBridge";
@@ -47,11 +48,16 @@ export function useRuntimeSession() {
   const [error, setError] = useState<string>();
   const [usage, setUsage] = useState<UsagePeriod>();
   const [config, setConfig] = useState<RuntimeConfig>();
+  const [modelDiscovery, setModelDiscovery] = useState<
+    | (RuntimeNotifications["config.models_result"] & { sequence: number })
+    | undefined
+  >();
   const [syncing, setSyncing] = useState(false);
   const selectedIdRef = useRef<string | undefined>(undefined);
   const sessionsRef = useRef<SessionInfo[]>([]);
   const activeRef = useRef<ActiveData>(blankActive());
   const backgroundFlowIdRef = useRef(0);
+  const modelDiscoverySequenceRef = useRef(0);
   // 仅保存当前页面生命周期内每个会话的临时投影。Runtime 仍是消息与 run
   // 的唯一权威；切回时只保留尚未发送的本地 FIFO，不能重放已完成的流。
   const sessionViewsRef = useRef(new Map<string, ActiveData>());
@@ -232,6 +238,13 @@ export function useRuntimeSession() {
               [sessionId]: "success",
             }));
           void drainQueueRef.current?.();
+        },
+        onConfigModelsResult: (result) => {
+          modelDiscoverySequenceRef.current++;
+          setModelDiscovery({
+            ...result,
+            sequence: modelDiscoverySequenceRef.current,
+          });
         },
       }),
     [
@@ -785,6 +798,7 @@ export function useRuntimeSession() {
     setConfig: setRuntimeConfig,
     // 0.4 MCP 状态快照与刷新。
     mcpServers,
+    modelDiscovery,
     refreshMcp,
   };
 }

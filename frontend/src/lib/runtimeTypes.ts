@@ -99,6 +99,7 @@ export type RunError = {
   model_ref?: string;
 };
 export type AgentRunEvent = {
+  session_id?: string;
   run_id?: string;
   /** cancelling 是非终态：daemon 已接受取消，run 仍在收尾，can_control=false。 */
   state:
@@ -114,6 +115,7 @@ export type AgentRunEvent = {
   resume_available?: boolean;
 };
 export type SteeringMessage = {
+  session_id?: string;
   id: string;
   run_id: string;
   client_msg_id?: string;
@@ -123,6 +125,7 @@ export type SteeringMessage = {
   parts?: MessagePart[];
 };
 export type AgentUsageEvent = {
+  session_id?: string;
   run_id?: string;
   input_tokens: number;
   output_tokens: number;
@@ -135,12 +138,14 @@ export type AgentUsageEvent = {
   tokens_per_sec?: number;
 };
 export type ToolStartEvent = {
+  session_id?: string;
   id: string;
   tool: string;
   params: JSONRecord;
   intent?: string;
 };
 export type ToolGuardEvent = {
+  session_id?: string;
   tool_call_id: string;
   tool: string;
   risk: string;
@@ -152,6 +157,7 @@ export type ToolGuardEvent = {
   review_message?: string;
 };
 export type ToolEndEvent = {
+  session_id?: string;
   id: string;
   tool: string;
   result: string;
@@ -238,6 +244,7 @@ export type GuardConfirmEvent = {
   can_reply: boolean;
 };
 export type CompactResultEvent = {
+  session_id?: string;
   /** 压缩进行中（running=true 时其余字段可省略）。 */
   before_tokens?: number;
   after_tokens?: number;
@@ -390,8 +397,8 @@ export type RuntimeBridgeMethods = {
   "config.get": { params: Record<string, never>; result: RuntimeConfig };
   "config.set": { params: ConfigSetParams; result: RuntimeConfig };
   "config.discoverModels": {
-    params: { model_ref: string };
-    result: { models: string[]; error_message?: string };
+    params: { provider: string };
+    result: { status: "processing" };
   };
   "memory.list": {
     params: Record<string, never>;
@@ -443,6 +450,7 @@ export type RuntimeBridgeResult<M extends RuntimeBridgeMethod> =
 
 export type RuntimeNotifications = {
   "agent.delta": {
+    session_id?: string;
     run_id?: string;
     kind: "assistant" | "reasoning";
     content: string;
@@ -464,6 +472,11 @@ export type RuntimeNotifications = {
   "session.updated": { session: SessionInfo };
   "session.compact_result": CompactResultEvent;
   "config.state": RuntimeConfig;
+  "config.models_result": {
+    provider: string;
+    models?: string[];
+    error_message?: string;
+  };
   "memory.state": { memories: MemoryItem[] };
   "mcp.updated": { server: MCPServerInfo };
   "skill.load": { name: string; status?: string };

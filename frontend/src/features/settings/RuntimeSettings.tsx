@@ -7,6 +7,7 @@ import type {
   MemoryItem,
   RuntimeCatalog,
   RuntimeConfig,
+  RuntimeNotifications,
   SkillInfo,
 } from "../../lib/runtimeBridge";
 import type { useRuntimeBridge } from "../runtime/useRuntimeBridge";
@@ -22,6 +23,9 @@ type SettingsProps = {
   config?: RuntimeConfig;
   hello?: { runtime_version: string; catalog: RuntimeCatalog };
   mcpServers: MCPServerInfo[];
+  modelDiscovery?: RuntimeNotifications["config.models_result"] & {
+    sequence: number;
+  };
   onConfig: (config: RuntimeConfig) => void;
   onClose: () => void;
   refreshMcp: () => void;
@@ -43,6 +47,9 @@ export type SettingsTabProps = {
   config?: RuntimeConfig;
   hello?: { runtime_version: string; catalog: RuntimeCatalog };
   mcpServers: MCPServerInfo[];
+  modelDiscovery?: RuntimeNotifications["config.models_result"] & {
+    sequence: number;
+  };
   onConfig: (config: RuntimeConfig) => void;
   refreshMcp: () => void;
   rpc: ReturnType<typeof useRuntimeBridge>["rpc"];
@@ -70,6 +77,7 @@ export function RuntimeSettings({
   config,
   hello,
   mcpServers,
+  modelDiscovery,
   onConfig,
   onClose,
   refreshMcp,
@@ -107,6 +115,7 @@ export function RuntimeSettings({
     config,
     hello,
     mcpServers,
+    modelDiscovery,
     onConfig,
     refreshMcp,
     rpc,

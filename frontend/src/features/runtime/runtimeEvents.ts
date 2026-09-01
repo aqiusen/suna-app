@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type {
   MCPServerInfo,
+  RuntimeNotifications,
   RuntimeConfig,
   RuntimeNotification,
   SessionInfo,
@@ -40,6 +41,10 @@ export type NotificationDeps = {
   onRunActive?: (runId: string) => void;
   /** session.updated=idle 是漏收终态通知时的权威收敛信号。 */
   onSessionIdle?: (runId?: string) => void;
+  /** 模型列表请求的异步结果只属于发起当前 Runtime connection 的设置页。 */
+  onConfigModelsResult?: (
+    result: RuntimeNotifications["config.models_result"],
+  ) => void;
 };
 
 /**
@@ -65,6 +70,7 @@ export function createNotificationHandler({
   onRunTerminal,
   onRunActive,
   onSessionIdle,
+  onConfigModelsResult,
 }: NotificationDeps) {
   return (event: RuntimeNotification, receivedAt = Date.now()) => {
     if (event.method === "session.updated") {
@@ -119,18 +125,29 @@ export function createNotificationHandler({
       setConfig(event.params);
       return;
     }
+    if (event.method === "config.models_result") {
+      onConfigModelsResult?.(event.params);
+      return;
+    }
     // 0.4 MCP 状态增量：按 server 名覆盖本地快照，驱动设置面板状态徽章。
     if (event.method === "mcp.updated") {
       mergeMcp(event.params.server);
       return;
     }
     if (event.method === "agent.delta") {
-      if (!acceptsRun(event.params.run_id)) return;
+      if (!acceptsSession(event.params.session_id)) return;
+      // 上游 Runtime 的 delta 以 session_id 归属，未承诺携带 run_id。
+      // 同一 session 禁止并发 run，因此缺失 run_id 时可按有序连接流安全消费。
+      if (event.params.run_id && !acceptsRun(event.params.run_id)) return;
       queueDelta(event.params.kind, event.params.content, event.params.run_id);
       return;
     }
     if (event.method === "agent.run") {
-      if (!acceptsRun(event.params.run_id)) return;
+      if (
+        !acceptsSession(event.params.session_id) ||
+        !acceptsRun(event.params.run_id)
+      )
+        return;
       const terminal =
         event.params.state === "done" ||
         event.params.state === "cancelled" ||
@@ -206,11 +223,13 @@ export function createNotificationHandler({
       return;
     }
     if (event.method === "agent.usage") {
-      if (!acceptsRun(event.params.run_id)) return;
+      if (!acceptsSession(event.params.session_id)) return;
+      if (event.params.run_id && !acceptsRun(event.params.run_id)) return;
       setActive((value) => ({ ...value, usage: event.params }));
       return;
     }
     if (event.method === "agent.tool_start") {
+      if (!acceptsSession(event.params.session_id)) return;
       const scope = getScope();
       if (isSyncing() || !scope || scope.sessionId !== getSelectedId()) return;
       const id = event.params.id;
@@ -308,6 +327,7 @@ export function createNotificationHandler({
       return;
     }
     if (event.method === "agent.tool_guard") {
+      if (!acceptsSession(event.params.session_id)) return;
       const subtaskMatch =
         event.params.tool_call_id.match(/^spawn:([^:]+):(.+)$/);
       setActive((value) => {
@@ -353,6 +373,7 @@ export function createNotificationHandler({
       return;
     }
     if (event.method === "agent.tool_end") {
+      if (!acceptsSession(event.params.session_id)) return;
       const subtaskMatch = event.params.id.match(/^spawn:([^:]+):(.+)$/);
       const isSpawn = event.params.tool === "spawn";
       setActive((value) => {
@@ -527,8 +548,7 @@ export function createNotificationHandler({
     // 压缩（compact）过程/结果：running=true 进入压缩中，running=false
     // 显示结果或错误。事件为全局通知，按当前作用域过滤。
     if (event.method === "session.compact_result") {
-      const scope = getScope();
-      if (isSyncing() || !scope || scope.sessionId !== getSelectedId()) return;
+      if (!acceptsSession(event.params.session_id)) return;
       setActive((value) => ({ ...value, compact: event.params }));
       return;
     }
