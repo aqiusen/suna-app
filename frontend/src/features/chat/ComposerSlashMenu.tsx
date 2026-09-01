@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { useT } from "../../lib/i18n";
+import { useComposerPopoverPlacement } from "./composerPopover";
 import type { SlashItem } from "./slashCommands";
 
 export function ComposerSlashMenu({
@@ -11,12 +13,16 @@ export function ComposerSlashMenu({
   onPick: (item: SlashItem) => void;
 }) {
   const t = useT();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const position = useComposerPopoverPlacement(menuRef, 320);
   if (items.length === 0) return null;
   return (
     <div
       aria-label={t("slash.menu")}
-      className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-[min(320px,40vh)] overflow-auto rounded-xl border border-line bg-surface-solid shadow-lg"
+      className={`absolute inset-x-0 z-20 overflow-auto rounded-xl border border-line bg-surface-solid shadow-lg ${position.className}`}
+      ref={menuRef}
       role="listbox"
+      style={position.style}
     >
       {items.map((item, index) => {
         const active = index === selected;

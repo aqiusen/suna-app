@@ -1,5 +1,4 @@
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -7,14 +6,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { LocaleContext, type Locale, type Translate } from "./i18nContext";
+
+export type { Locale, Translate } from "./i18nContext";
 
 /**
  * 轻量 i18n：中英文双语，无第三方依赖。
  * - 语言检测：localStorage 偏好 > 浏览器语言（navigator.language）
  * - 切换后持久化，界面即时生效（React state 驱动重渲染）
  */
-
-export type Locale = "zh" | "en";
 
 const STORAGE_KEY = "suna-locale";
 
@@ -88,8 +88,10 @@ const DICT: Dict = {
   },
   "sidebar.workspace": { zh: "Runtime workspace", en: "Runtime workspace" },
   "sidebar.newTask": { zh: "新建任务", en: "New task" },
+  "sidebar.newConversation": { zh: "新建对话", en: "New conversation" },
   "sidebar.closeList": { zh: "关闭会话列表", en: "Close session list" },
   "sidebar.sessionLabel": { zh: "会话", en: "Sessions" },
+  "sidebar.projects": { zh: "项目列表", en: "Projects" },
   "sidebar.recent": { zh: "最近会话", en: "Recent sessions" },
   "sidebar.groupPending": { zh: "有待处理任务", en: "Has pending tasks" },
   "sidebar.pin": { zh: "置顶会话", en: "Pin session" },
@@ -175,6 +177,10 @@ const DICT: Dict = {
   "chat.empty.desc": {
     zh: "告诉 Suna 你想在这个工作目录中完成什么，它会负责执行与推进。",
     en: "Tell Suna what to do in this workspace — it will execute and drive it forward.",
+  },
+  "chat.welcome.greeting": {
+    zh: "你好，有什么可以帮你？",
+    en: "Hi, what can I help you with?",
   },
   "chat.user": { zh: "你", en: "You" },
   "chat.composerHint": {
@@ -899,11 +905,6 @@ const DICT: Dict = {
   },
 };
 
-export type Translate = (
-  key: string,
-  params?: Record<string, string | number>,
-) => string;
-
 /** 翻译实现：取当前 locale 文案，替换 {param} 占位符；缺失时回退中文。 */
 function translate(
   locale: Locale,
@@ -918,16 +919,6 @@ function translate(
   }
   return text;
 }
-
-const LocaleContext = createContext<{
-  locale: Locale;
-  t: Translate;
-  changeLocale: (locale: Locale) => void;
-}>({
-  locale: "zh",
-  t: (key) => key,
-  changeLocale: () => undefined,
-});
 
 // 模块级当前语言：供非组件模块（sessionActions/runtimeEvents 等）做 toast/
 // 错误文案翻译。由 LocaleProvider 同步维护，避免这些模块依赖 React context。

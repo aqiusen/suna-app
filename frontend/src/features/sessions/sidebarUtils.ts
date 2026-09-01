@@ -7,20 +7,6 @@ export const statusLabels: Record<SessionInfo["status"], string> = {
   compacting: "session.status.compacting",
 };
 
-/** 会话置顶记忆：localStorage 记录手动置顶的会话 id。 */
-export const PINNED_KEY = "suna-app:pinned-sessions";
-
-export function loadPinned(): Set<string> {
-  try {
-    const raw = localStorage.getItem(PINNED_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
 /** 工作目录名称：路径 basename；根路径等无 basename 时回退为原路径。 */
 export function workdirName(cwd: string) {
   const trimmed = cwd.replace(/\/+$/, "");

@@ -126,6 +126,16 @@ function AppShell() {
       active.run?.state === "cancelling" ||
       current?.waiting_type),
   );
+  const isWelcome = Boolean(
+    selected &&
+    !syncing &&
+    !running &&
+    messages.length === 0 &&
+    active.flow.length === 0 &&
+    active.queuedMessages.length === 0 &&
+    !active.ask &&
+    !active.guard,
+  );
   function openRename(target: { id: string; title?: string }) {
     setRenamingSessionId(target.id);
     setTitleDraft(target.title ?? "");
@@ -234,20 +244,22 @@ function AppShell() {
         tabIndex={mobileMenuOpen ? 0 : -1}
         type="button"
       />{" "}
-      <section className="workspace">
-        <SessionHeader
-          canControl={canControl}
-          onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          onStop={() =>
-            void queueSessionOperation(() => rpc("agent.cancel", {}))
-          }
-          running={running}
-          selected={selected}
-          syncing={syncing}
-          onRename={
-            selected && canRename ? () => openRename(selected) : undefined
-          }
-        />
+      <section className={`workspace ${isWelcome ? "workspace-welcome" : ""}`}>
+        {(!isWelcome || isMobile) && (
+          <SessionHeader
+            canControl={canControl}
+            onOpenMobileMenu={() => setMobileMenuOpen(true)}
+            onStop={() =>
+              void queueSessionOperation(() => rpc("agent.cancel", {}))
+            }
+            running={running}
+            selected={selected}
+            syncing={syncing}
+            onRename={
+              selected && canRename ? () => openRename(selected) : undefined
+            }
+          />
+        )}
         <SessionDialogs
           createOpen={createOpen}
           createInitialCwd={createInitialCwd}
@@ -382,6 +394,7 @@ function AppShell() {
               queueControlsDisabled={syncing}
               sessionId={active.snapshot?.session.id}
               toolSummary={active.toolSummary}
+              welcome={isWelcome}
             />
             <Composer
               activeModel={

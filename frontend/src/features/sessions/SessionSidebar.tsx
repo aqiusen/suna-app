@@ -7,8 +7,6 @@ import { useMediaQuery } from "../../lib/useMediaQuery";
 import type { SessionInfo } from "../../lib/runtimeBridge";
 import { SessionRow } from "./SessionRow";
 import {
-  loadPinned,
-  PINNED_KEY,
   workdirName,
   workdirPathKey,
   type SessionSidebarProps,
@@ -37,9 +35,7 @@ export function SessionSidebar({
   settingsOpen = false,
 }: SessionSidebarProps) {
   const t = useT();
-  const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [pinned, setPinned] = useState<Set<string>>(loadPinned);
   const [workdirMenuCwd, setWorkdirMenuCwd] = useState<string>();
   const [confirmingWorkdirCwd, setConfirmingWorkdirCwd] = useState<string>();
   const [confirmingSessionId, setConfirmingSessionId] = useState<string>();
@@ -71,33 +67,6 @@ export function SessionSidebar({
     });
   }
 
-  function togglePin(id: string) {
-    setPinned((value) => {
-      const next = new Set(value);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      try {
-        localStorage.setItem(PINNED_KEY, JSON.stringify([...next]));
-      } catch {
-        // localStorage 不可用时仅内存生效。
-      }
-      return next;
-    });
-  }
-
-  function unpin(id: string) {
-    setPinned((value) => {
-      const next = new Set(value);
-      next.delete(id);
-      try {
-        localStorage.setItem(PINNED_KEY, JSON.stringify([...next]));
-      } catch {
-        // localStorage 不可用时仅内存生效。
-      }
-      return next;
-    });
-  }
-
   function requestDelete(id: string) {
     setConfirmingSessionId(id);
   }
@@ -114,7 +83,7 @@ export function SessionSidebar({
     await onDeleteWorkdir(cwd);
   }
 
-  // 排序：手动置顶 > waiting 置顶（设计 §6.2）> 其余按更新时间倒序。
+  // 排序：等待中的会话优先，其余按更新时间倒序。
   const sorted = useMemo(
     () =>
       sessions
@@ -123,34 +92,19 @@ export function SessionSidebar({
           updatedAt: new Date(session.updated_at).getTime(),
         }))
         .sort((a, b) => {
-          const pa = pinned.has(a.session.id) ? 0 : 1;
-          const pb = pinned.has(b.session.id) ? 0 : 1;
-          if (pa !== pb) return pa - pb;
           const rank =
             waitingRank[a.session.status] - waitingRank[b.session.status];
           if (rank !== 0) return rank;
           return b.updatedAt - a.updatedAt;
         })
         .map((item) => item.session),
-    [pinned, sessions],
+    [sessions],
   );
-
-  // 搜索：过滤标题 + 路径，搜索时平铺（临时取消分组）。
-  const filtered = useMemo(() => {
-    if (!query.trim()) return sorted;
-    const q = query.trim().toLowerCase();
-    return sorted.filter(
-      (session) =>
-        (session.title ?? "").toLowerCase().includes(q) ||
-        session.cwd.toLowerCase().includes(q) ||
-        workdirName(session.cwd).toLowerCase().includes(q),
-    );
-  }, [sorted, query]);
 
   // 分组：按 cwd 聚合，组内保持 waiting 优先 + 时间倒序。
   const groups = useMemo(() => {
     const map = new Map<string, { cwd: string; list: SessionInfo[] }>();
-    for (const session of filtered) {
+    for (const session of sorted) {
       const key = workdirPathKey(session.cwd);
       const group = map.get(key) ?? { cwd: session.cwd, list: [] };
       group.list.push(session);
@@ -162,10 +116,12 @@ export function SessionSidebar({
       list,
       hasWaiting: list.some((session) => session.status === "waiting"),
     }));
-  }, [filtered]);
-  const searching = Boolean(query.trim());
+  }, [sorted]);
   const groupsWithWaiting = groups.filter((group) => group.hasWaiting);
   const groupsRest = groups.filter((group) => !group.hasWaiting);
+  const recentSessions = sorted
+    .filter((session) => session.id !== selectedId)
+    .slice(0, 5);
   const collapsedInitialized = useRef(false);
 
   // 首次加载保持紧凑，但当前 session 的项目组必须展开，确保用户能看见
@@ -199,7 +155,7 @@ export function SessionSidebar({
       className={`session-sidebar ${open ? "is-open" : ""}`}
       inert={hidden || undefined}
     >
-      <div className="mb-1 flex min-h-[42px] items-center justify-between px-1 pl-2">
+      <div className="mb-7 flex min-h-[42px] items-center px-1 pl-2">
         <button
           className="flex cursor-pointer items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-[17px] font-extrabold tracking-tight text-ink transition-colors duration-150 hover:bg-surface-subtle"
           type="button"
@@ -209,168 +165,167 @@ export function SessionSidebar({
           </span>
           <span>Suna</span>
         </button>
-        <div className="flex items-center gap-1">
-          <IconButton
-            disabled={disabled}
-            label={t("sidebar.newTask")}
-            onClick={() => onRequestCreate()}
-          >
-            <Icon name="plus" />
-          </IconButton>
-          {/* 移动端抽屉内的关闭按钮。 */}
-          {onClose && (
-            <IconButton
-              className="hidden max-[720px]:inline-grid"
-              label={t("sidebar.closeList")}
-              onClick={onClose}
-            >
-              <Icon name="close" />
-            </IconButton>
-          )}
-        </div>
       </div>
-      <div className="px-2 pb-2">
-        <div className="relative">
-          <span className="pointer-events-none absolute inset-y-0 left-2.5 grid place-items-center text-ink-muted">
-            <Icon name="search" size={13} />
+      <div className="px-2 pb-7">
+        <button
+          className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-left text-[15px] font-semibold text-ink transition-colors duration-150 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled}
+          onClick={() => onRequestCreate()}
+          type="button"
+        >
+          <span className="grid h-5 w-5 place-items-center rounded-full bg-ink text-white">
+            <Icon name="plus" size={13} />
           </span>
-          <input
-            aria-label={t("sidebar.search")}
-            className="w-full rounded-lg border border-line bg-surface-raised py-1.5 pr-2.5 pl-8 text-[12px] text-ink placeholder:text-ink-muted focus:border-blue/50 focus:ring-2 focus:ring-blue/25 focus:outline-none"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("sidebar.search")}
-            value={query}
-          />
-        </div>
+          {t("sidebar.newConversation")}
+        </button>
       </div>
-      <nav aria-label={t("sidebar.recent")} className="session-list">
-        {filtered.length === 0 && (
-          <p className="p-4 text-center text-[13px] text-ink-muted">
-            {searching ? t("sidebar.noMatch") : t("sidebar.empty")}
-          </p>
-        )}
-        {/* 搜索时平铺：不分组，保持 waiting 优先顺序 */}
-        {searching
-          ? filtered.map((session) => (
-              <SessionRow
-                terminalState={terminalStates?.[session.id]}
-                disabled={disabled}
-                joining={session.id === pendingId}
-                key={session.id}
-                onDelete={onDelete ? requestDelete : undefined}
-                onRename={onRename}
-                onSelect={onSelect}
-                onTogglePin={() => togglePin(session.id)}
-                pinned={pinned.has(session.id)}
-                selected={session.id === selectedId}
-                session={session}
-              />
-            ))
-          : [...groupsWithWaiting, ...groupsRest].map((group) => {
-              const isCollapsed = collapsed.has(group.cwd);
-              return (
-                <div className="group/workdir mb-1" key={group.cwd}>
-                  <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-surface-subtle">
-                    <button
-                      aria-expanded={!isCollapsed}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
-                      onClick={() => toggleCollapsed(group.cwd)}
-                      type="button"
-                    >
-                      <Icon
-                        className={`shrink-0 text-ink-muted transition-transform duration-150 ${isCollapsed ? "" : "rotate-90"}`}
-                        name="chevron-right"
-                        size={12}
+      {onClose && (
+        <IconButton
+          className="absolute top-4 right-3 hidden max-[720px]:inline-grid"
+          label={t("sidebar.closeList")}
+          onClick={onClose}
+        >
+          <Icon name="close" />
+        </IconButton>
+      )}
+      <nav aria-label={t("sidebar.projects")} className="session-list">
+        <section>
+          <div className="mb-2 flex items-center justify-between px-2">
+            <h2 className="m-0 text-[12px] font-semibold text-ink-muted">
+              {t("sidebar.projects")}
+            </h2>
+            <Icon className="text-ink-muted" name="ellipsis" size={16} />
+          </div>
+          {sorted.length === 0 && (
+            <p className="p-4 text-center text-[13px] text-ink-muted">
+              {t("sidebar.empty")}
+            </p>
+          )}
+          {[...groupsWithWaiting, ...groupsRest].map((group) => {
+            const isCollapsed = collapsed.has(group.cwd);
+            return (
+              <div className="group/workdir mb-1" key={group.cwd}>
+                <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-surface-subtle">
+                  <button
+                    aria-expanded={!isCollapsed}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                    onClick={() => toggleCollapsed(group.cwd)}
+                    type="button"
+                  >
+                    <Icon
+                      className={`shrink-0 text-ink-muted transition-transform duration-150 ${isCollapsed ? "" : "rotate-90"}`}
+                      name="chevron-right"
+                      size={12}
+                    />
+                    <Icon
+                      className="shrink-0 text-ink-muted"
+                      name="folder"
+                      size={13}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[11.5px] font-extrabold text-ink">
+                      {group.name}
+                    </span>
+                    {group.hasWaiting && (
+                      <span
+                        aria-label={t("sidebar.groupPending")}
+                        className="h-[7px] w-[7px] shrink-0 rounded-full bg-amber"
                       />
-                      <Icon
-                        className="shrink-0 text-ink-muted"
-                        name="folder"
-                        size={13}
-                      />
-                      <span className="min-w-0 flex-1 truncate text-[11.5px] font-extrabold text-ink">
-                        {group.name}
-                      </span>
-                      {group.hasWaiting && (
-                        <span
-                          aria-label={t("sidebar.groupPending")}
-                          className="h-[7px] w-[7px] shrink-0 rounded-full bg-amber"
-                        />
-                      )}
-                    </button>
-                    <div
-                      className="relative flex shrink-0 items-center gap-0.5"
-                      ref={
-                        workdirMenuCwd === group.cwd
-                          ? workdirMenuRef
-                          : undefined
-                      }
-                    >
-                      <Tooltip label={t("group.more")}>
+                    )}
+                  </button>
+                  <div
+                    className="relative flex shrink-0 items-center gap-0.5"
+                    ref={
+                      workdirMenuCwd === group.cwd ? workdirMenuRef : undefined
+                    }
+                  >
+                    <Tooltip label={t("group.more")}>
+                      <button
+                        aria-expanded={workdirMenuCwd === group.cwd}
+                        aria-label={t("group.more")}
+                        className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/workdir:opacity-100"
+                        onClick={() =>
+                          setWorkdirMenuCwd((current) =>
+                            current === group.cwd ? undefined : group.cwd,
+                          )
+                        }
+                        type="button"
+                      >
+                        <Icon name="ellipsis" size={14} />
+                      </button>
+                    </Tooltip>
+                    {workdirMenuCwd === group.cwd && (
+                      <div className="absolute top-8 right-0 z-10 w-36 overflow-hidden rounded-lg border border-line bg-surface-solid py-1 shadow-lg">
                         <button
-                          aria-expanded={workdirMenuCwd === group.cwd}
-                          aria-label={t("group.more")}
-                          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-ink-muted opacity-0 transition-[opacity,background,color] duration-150 hover:bg-surface-solid hover:text-ink focus:opacity-100 group-hover/workdir:opacity-100"
-                          onClick={() =>
-                            setWorkdirMenuCwd((current) =>
-                              current === group.cwd ? undefined : group.cwd,
-                            )
-                          }
+                          className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-ink-soft transition-colors hover:bg-surface-subtle hover:text-ink"
+                          disabled={disabled}
+                          onClick={() => {
+                            setWorkdirMenuCwd(undefined);
+                            void onCreate(group.cwd);
+                          }}
                           type="button"
                         >
-                          <Icon name="ellipsis" size={14} />
+                          <Icon name="plus" size={14} />
+                          {t("group.newSession")}
                         </button>
-                      </Tooltip>
-                      {workdirMenuCwd === group.cwd && (
-                        <div className="absolute top-8 right-0 z-10 w-36 overflow-hidden rounded-lg border border-line bg-surface-solid py-1 shadow-lg">
+                        {onDeleteWorkdir && (
                           <button
-                            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-ink-soft transition-colors hover:bg-surface-subtle hover:text-ink"
-                            disabled={disabled}
-                            onClick={() => {
-                              setWorkdirMenuCwd(undefined);
-                              void onCreate(group.cwd);
-                            }}
+                            className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-rose transition-colors hover:bg-rose/10"
+                            onClick={() => requestDeleteWorkdir(group.cwd)}
                             type="button"
                           >
-                            <Icon name="plus" size={14} />
-                            {t("group.newSession")}
+                            <Icon name="trash" size={14} />
+                            {t("group.delete")}
                           </button>
-                          {onDeleteWorkdir && (
-                            <button
-                              className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-rose transition-colors hover:bg-rose/10"
-                              onClick={() => requestDeleteWorkdir(group.cwd)}
-                              type="button"
-                            >
-                              <Icon name="trash" size={14} />
-                              {t("group.delete")}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {!isCollapsed && (
-                    <div className="ml-[30px] border-l border-line pl-2">
-                      {group.list.map((session) => (
-                        <SessionRow
-                          terminalState={terminalStates?.[session.id]}
-                          disabled={disabled}
-                          joining={session.id === pendingId}
-                          key={session.id}
-                          nested
-                          onDelete={onDelete ? requestDelete : undefined}
-                          onRename={onRename}
-                          onSelect={onSelect}
-                          onTogglePin={() => togglePin(session.id)}
-                          pinned={pinned.has(session.id)}
-                          selected={session.id === selectedId}
-                          session={session}
-                        />
-                      ))}
-                    </div>
-                  )}
                 </div>
-              );
-            })}
+                {!isCollapsed && (
+                  <div className="ml-[30px] border-l border-line pl-2">
+                    {group.list.map((session) => (
+                      <SessionRow
+                        terminalState={terminalStates?.[session.id]}
+                        disabled={disabled}
+                        joining={session.id === pendingId}
+                        key={session.id}
+                        nested
+                        onDelete={onDelete ? requestDelete : undefined}
+                        onRename={onRename}
+                        onSelect={onSelect}
+                        selected={session.id === selectedId}
+                        session={session}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </section>
+        {recentSessions.length > 0 && (
+          <section className="mt-7">
+            <div className="mb-2 flex items-center justify-between px-2">
+              <h2 className="m-0 text-[12px] font-semibold text-ink-muted">
+                {t("sidebar.recent")}
+              </h2>
+              <Icon className="text-ink-muted" name="ellipsis" size={16} />
+            </div>
+            <div className="px-1">
+              {recentSessions.map((session) => (
+                <SessionRow
+                  terminalState={terminalStates?.[session.id]}
+                  disabled={disabled}
+                  joining={session.id === pendingId}
+                  key={session.id}
+                  onSelect={onSelect}
+                  selected={session.id === selectedId}
+                  session={session}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </nav>
       {(confirmingSessionId || confirmingWorkdirCwd) && (
         <SessionDeleteConfirm
@@ -384,7 +339,6 @@ export function SessionSidebar({
               const id = confirmingSessionId;
               if (!onDelete) return;
               setConfirmingSessionId(undefined);
-              unpin(id);
               onDelete(id);
               return;
             }

@@ -47,4 +47,11 @@ describe("SessionRow", () => {
     expect(onRename).toHaveBeenCalledWith("s1");
     expect(onDelete).toHaveBeenCalledWith("s1");
   });
+
+  it("将完成状态显示在左侧状态点", () => {
+    renderRow({ terminalState: "success" });
+
+    expect(screen.getByRole("status", { name: "任务完成" })).toBeTruthy();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
 });

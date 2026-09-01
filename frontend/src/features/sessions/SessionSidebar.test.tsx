@@ -16,7 +16,7 @@ const session: SessionInfo = {
   client_count: 0,
 };
 
-function renderSidebar(onRequestCreate = vi.fn()) {
+function renderSidebar(onRequestCreate = vi.fn(), sessions = [session]) {
   const onDelete = vi.fn();
   const onRename = vi.fn();
   render(
@@ -31,7 +31,7 @@ function renderSidebar(onRequestCreate = vi.fn()) {
           onRequestCreate={onRequestCreate}
           onSelect={() => undefined}
           selectedId="s1"
-          sessions={[session]}
+          sessions={sessions}
         />
       </TooltipProvider>
     </LocaleProvider>,
@@ -54,9 +54,6 @@ describe("SessionSidebar 会话操作", () => {
 
   it("删除前弹出确认，取消不会真正删除", () => {
     const { onDelete } = renderSidebar();
-    fireEvent.change(screen.getByLabelText(/search/i), {
-      target: { value: "Demo" },
-    });
     fireEvent.click(screen.getByRole("button", { name: /delete session/i }));
     expect(onDelete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
@@ -65,19 +62,32 @@ describe("SessionSidebar 会话操作", () => {
 
   it("确认后才会删除会话", () => {
     const { onDelete } = renderSidebar();
-    fireEvent.change(screen.getByLabelText(/search/i), {
-      target: { value: "Demo" },
-    });
     fireEvent.click(screen.getByRole("button", { name: /delete session/i }));
     const confirms = screen.getAllByRole("button", { name: /delete session/i });
     fireEvent.click(confirms[confirms.length - 1]);
     expect(onDelete).toHaveBeenCalledWith("s1");
   });
 
-  it("点击新建按钮不会把鼠标事件当作初始目录传出", () => {
+  it("点击新建对话不会把鼠标事件当作初始目录传出", () => {
     const { onRequestCreate } = renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: /new task/i }));
+    fireEvent.click(screen.getByRole("button", { name: /new conversation/i }));
     expect(onRequestCreate).toHaveBeenCalledWith();
+  });
+
+  it("显示项目列表和由 Runtime 会话派生的最近会话", () => {
+    renderSidebar(vi.fn(), [
+      session,
+      {
+        ...session,
+        id: "s2",
+        title: "Recent session",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    expect(screen.getByRole("heading", { name: /projects/i })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: /recent sessions/i }),
+    ).toBeTruthy();
   });
 
   it("默认展开当前 session 所属项目组", () => {

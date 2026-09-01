@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../lib/i18n";
+import { useComposerPopoverPlacement } from "./composerPopover";
 import type { SkillInfo } from "../../lib/runtimeBridge";
 
 export function ComposerSkillsPanel({
@@ -16,6 +17,8 @@ export function ComposerSkillsPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [query, setQuery] = useState("");
+  const panelRef = useRef<HTMLElement>(null);
+  const position = useComposerPopoverPlacement(panelRef, 420);
 
   useEffect(() => {
     let alive = true;
@@ -65,8 +68,10 @@ export function ComposerSkillsPanel({
   return (
     <section
       aria-label={t("slash.skillsTitle")}
-      className="absolute inset-x-0 bottom-full z-20 mb-2 flex max-h-[min(420px,50vh)] flex-col overflow-hidden rounded-xl border border-line bg-surface-solid shadow-lg"
+      className={`absolute inset-x-0 z-20 flex flex-col overflow-hidden rounded-xl border border-line bg-surface-solid shadow-lg ${position.className}`}
+      ref={panelRef}
       role="dialog"
+      style={position.style}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-2">
         <h2 className="text-[13px] font-semibold text-ink">

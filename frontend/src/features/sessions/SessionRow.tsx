@@ -12,8 +12,6 @@ export function SessionRow({
   onDelete,
   onRename,
   onSelect,
-  onTogglePin,
-  pinned,
   selected,
   session,
   terminalState,
@@ -25,16 +23,32 @@ export function SessionRow({
   onDelete?: (id: string) => void;
   onRename?: (id: string) => void;
   onSelect: (id: string) => void;
-  onTogglePin?: () => void;
-  pinned?: boolean;
   selected: boolean;
   session: SessionInfo;
   terminalState?: "success" | "failed";
 }) {
   const t = useT();
   const canDeleteSession = session.status === "idle";
-  const hasQuickActions = Boolean(onTogglePin || onRename || onDelete);
+  const hasQuickActions = Boolean(onRename || onDelete);
   const actionPadding = hasQuickActions ? "pr-24" : "";
+  const terminalLabel =
+    terminalState === "success"
+      ? "任务完成"
+      : terminalState === "failed"
+        ? "任务失败"
+        : undefined;
+  const stateDotClass =
+    terminalState === "success"
+      ? "bg-green"
+      : terminalState === "failed"
+        ? "bg-rose"
+        : session.status === "running"
+          ? "animate-[breathe_2.4s_ease-in-out_infinite] bg-blue shadow-[0_0_0_4px_var(--color-blue-soft)]"
+          : session.status === "waiting"
+            ? "bg-amber"
+            : session.status === "compacting"
+              ? "animate-[breathe_1.8s_ease-in-out_infinite] bg-blue shadow-[0_0_0_3px_var(--color-blue-soft)]"
+              : "bg-ink-muted";
 
   return (
     <div className={`group relative my-0.5 ${joining ? "opacity-60" : ""}`}>
@@ -54,8 +68,10 @@ export function SessionRow({
         type="button"
       >
         <span
-          aria-hidden="true"
-          className={`h-[7px] w-[7px] rounded-full ${session.status === "running" ? "animate-[breathe_2.4s_ease-in-out_infinite] bg-blue shadow-[0_0_0_4px_var(--color-blue-soft)]" : session.status === "waiting" ? "bg-amber" : session.status === "compacting" ? "animate-[breathe_1.8s_ease-in-out_infinite] bg-blue shadow-[0_0_0_3px_var(--color-blue-soft)]" : "bg-ink-muted"}`}
+          aria-hidden={terminalLabel ? undefined : true}
+          aria-label={terminalLabel}
+          className={`h-[7px] w-[7px] rounded-full ${stateDotClass}`}
+          role={terminalLabel ? "status" : undefined}
         />
         <span className="grid min-w-0 gap-0.5">
           <strong
@@ -68,13 +84,6 @@ export function SessionRow({
                 className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-blue/25 border-t-blue"
                 role="status"
               />
-            ) : terminalState ? (
-              <span
-                aria-label={
-                  terminalState === "success" ? "任务完成" : "任务失败"
-                }
-                className={`h-2 w-2 shrink-0 rounded-full ${terminalState === "success" ? "bg-green" : "bg-rose"}`}
-              />
             ) : null}
           </strong>
         </span>
@@ -83,22 +92,6 @@ export function SessionRow({
         <div
           className={`absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 ${selected ? "opacity-100" : "opacity-0"}`}
         >
-          {onTogglePin && (
-            <Tooltip label={pinned ? t("sidebar.unpin") : t("sidebar.pin")}>
-              <button
-                aria-label={pinned ? t("sidebar.unpin") : t("sidebar.pin")}
-                className={`grid h-7 w-7 cursor-pointer place-items-center rounded-md transition-colors hover:bg-surface-solid hover:text-ink disabled:cursor-wait disabled:opacity-50 ${pinned ? "text-blue" : "text-ink-muted"}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onTogglePin();
-                }}
-                disabled={disabled || joining}
-                type="button"
-              >
-                <Icon name="pin" size={14} />
-              </button>
-            </Tooltip>
-          )}
           {onRename && (
             <Tooltip label={t("sidebar.rename")}>
               <button

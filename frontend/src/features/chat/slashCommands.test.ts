@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SkillInfo } from "../../lib/runtimeTypes";
 import {
+  activeSkillMention,
   insertSkillDraft,
   invokedSkillName,
   matchingSkills,
@@ -71,6 +72,13 @@ describe("slashCommands", () => {
     expect(runtimeSkillPrompt("$agent-browser 打开页面", skills)).toContain(
       "skill_load",
     );
+  });
+
+  it("marks only an available skill mention for composer highlighting", () => {
+    expect(activeSkillMention("$agent-browser 打开页面", skills)).toBe(
+      "$agent-browser",
+    );
+    expect(activeSkillMention("$unknown 打开页面", skills)).toBeUndefined();
   });
 
   it("recognizes registered commands without sending them as chat", () => {

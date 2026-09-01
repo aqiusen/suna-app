@@ -115,6 +115,9 @@ describe("Composer slash commands", () => {
     type("/agent");
     fireEvent.click(screen.getByRole("option", { name: /agent-browser/i }));
     expect(textarea).toHaveProperty("value", "$agent-browser ");
+    expect(screen.getByTestId("skill-mention").textContent).toBe(
+      "$agent-browser",
+    );
     expect(onSubmit).not.toHaveBeenCalled();
   });
 

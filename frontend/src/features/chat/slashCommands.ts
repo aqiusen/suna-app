@@ -109,6 +109,14 @@ export function invokedSkillName(draft: string) {
   return match?.[1];
 }
 
+/** 仅把当前 Runtime 可用的 `$skill` 作为可视化调用标记。 */
+export function activeSkillMention(draft: string, skills: SkillInfo[]) {
+  const name = invokedSkillName(draft);
+  return name && skills.some((skill) => skill.name === name)
+    ? skillMention(name)
+    : undefined;
+}
+
 function canToggleSkill(skill: SkillInfo) {
   return skill.scope !== "project" && skill.can_toggle !== false;
 }

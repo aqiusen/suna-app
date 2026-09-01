@@ -26,6 +26,7 @@ import { ComposerSkillsPanel } from "./ComposerSkillsPanel";
 import { ComposerSlashMenu } from "./ComposerSlashMenu";
 import {
   insertSkillDraft,
+  activeSkillMention,
   registeredSlashCommand,
   runtimeSkillPrompt,
   skillNeedingEnable,
@@ -182,6 +183,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [showImageInput, setShowImageInput] = useState(false);
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string>();
+    const [draftScrollTop, setDraftScrollTop] = useState(0);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     // 桌面壳才提供原生文件选择/粘贴路径解析能力。
     const nativeShell = isNativeDesktopShell();
@@ -189,6 +191,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const slashItems = slashMenuItems(draft, availableSlash, skillCatalog);
     const slashOpen = slashItems.length > 0 && !skillsOpen;
     const browsingSlash = draft.startsWith("/");
+    const activeSkill = activeSkillMention(draft, skillCatalog);
 
     function focusComposer() {
       requestAnimationFrame(() => textareaRef.current?.focus());
@@ -589,59 +592,87 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             </div>
           )}
           {/* 文字输入区 */}
-          <textarea
-            aria-label={t("chat.inputLabel")}
-            className="min-h-[58px] max-h-[180px] w-full resize-none bg-transparent px-1 py-1 text-[14px] leading-[22px] text-ink outline-none placeholder:text-ink-muted max-[720px]:min-h-[44px] max-[720px]:py-[11px] max-[720px]:text-[13.5px]"
-            disabled={disabled || sending}
-            onChange={(event) => setDraft(event.target.value)}
-            onInput={(event) => {
-              const element = event.currentTarget;
-              element.style.height = "auto";
-              element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
-            }}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              if (slashOpen) {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setSlashIndex((value) =>
-                    Math.min(value + 1, slashItems.length - 1),
-                  );
-                  return;
+          <div className="relative">
+            {activeSkill && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 overflow-hidden px-1 py-1 text-[14px] leading-[22px] text-ink max-[720px]:py-[11px] max-[720px]:text-[13.5px]"
+              >
+                <div
+                  className="whitespace-pre-wrap break-words"
+                  style={{ transform: `translateY(-${draftScrollTop}px)` }}
+                >
+                  <span
+                    className="text-blue-strong"
+                    data-testid="skill-mention"
+                  >
+                    {activeSkill}
+                  </span>
+                  {draft.slice(activeSkill.length)}
+                </div>
+              </div>
+            )}
+            <textarea
+              aria-label={t("chat.inputLabel")}
+              className={`relative z-10 min-h-[58px] max-h-[180px] w-full resize-none bg-transparent px-1 py-1 text-[14px] leading-[22px] outline-none placeholder:text-ink-muted max-[720px]:min-h-[44px] max-[720px]:py-[11px] max-[720px]:text-[13.5px] ${
+                activeSkill
+                  ? "text-transparent [caret-color:var(--color-ink)]"
+                  : "text-ink"
+              }`}
+              disabled={disabled || sending}
+              onChange={(event) => setDraft(event.target.value)}
+              onInput={(event) => {
+                const element = event.currentTarget;
+                element.style.height = "auto";
+                element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
+              }}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                if (slashOpen) {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setSlashIndex((value) =>
+                      Math.min(value + 1, slashItems.length - 1),
+                    );
+                    return;
+                  }
+                  if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setSlashIndex((value) => Math.max(value - 1, 0));
+                    return;
+                  }
+                  if (event.key === "Tab") {
+                    event.preventDefault();
+                    const selected = slashItems[slashIndex] ?? slashItems[0];
+                    if (selected) pickSlash(selected);
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setDraft("");
+                    return;
+                  }
                 }
-                if (event.key === "ArrowUp") {
+                const mod = event.metaKey || event.ctrlKey;
+                if (event.key === "Enter" && (mod || !event.shiftKey)) {
                   event.preventDefault();
-                  setSlashIndex((value) => Math.max(value - 1, 0));
-                  return;
+                  void submit();
                 }
-                if (event.key === "Tab") {
-                  event.preventDefault();
-                  const selected = slashItems[slashIndex] ?? slashItems[0];
-                  if (selected) pickSlash(selected);
-                  return;
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setDraft("");
-                  return;
-                }
+              }}
+              onPaste={(event) => void handlePaste(event)}
+              onScroll={(event) =>
+                setDraftScrollTop(event.currentTarget.scrollTop)
               }
-              const mod = event.metaKey || event.ctrlKey;
-              if (event.key === "Enter" && (mod || !event.shiftKey)) {
-                event.preventDefault();
-                void submit();
+              placeholder={
+                disabled
+                  ? t("chat.selectSessionFirst")
+                  : t("chat.sendPlaceholder")
               }
-            }}
-            onPaste={(event) => void handlePaste(event)}
-            placeholder={
-              disabled
-                ? t("chat.selectSessionFirst")
-                : t("chat.sendPlaceholder")
-            }
-            ref={textareaRef}
-            rows={1}
-            value={draft}
-          />
+              ref={textareaRef}
+              rows={1}
+              value={draft}
+            />
+          </div>
           {/* 底部工具栏 */}
           <div className="mt-1.5 flex items-center justify-between gap-2">
             {/* 左区：+ 附件菜单 / 批准方式 / 模型选择 */}

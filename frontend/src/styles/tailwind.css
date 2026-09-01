@@ -579,6 +579,8 @@ button {
     display: grid;
     grid-template-columns: 260px minmax(0, 1fr) 328px;
     height: 100dvh;
+    padding: 14px 16px 14px 0;
+    background: var(--color-canvas);
     overflow: hidden;
     isolation: isolate;
   }
@@ -605,6 +607,7 @@ button {
       display: flex;
       flex-direction: column;
       height: 100dvh;
+      padding: 0;
       overflow: hidden;
     }
     /* 底部导航占位后，workspace 收缩到剩余高度（flex 布局）。 */
@@ -621,6 +624,35 @@ button {
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+    border: 1px solid var(--color-line);
+    border-radius: 26px;
+    background: var(--color-surface-solid);
+    box-shadow: var(--shadow-xs);
+  }
+  .workspace-welcome {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .workspace-welcome .conversation-wrap {
+    overflow: hidden;
+  }
+  .workspace-welcome .welcome-timeline {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 0;
+  }
+  .workspace-welcome .welcome-greeting {
+    position: relative;
+    top: 48px;
+    min-height: 0;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    padding-bottom: 24px;
+  }
+  .workspace-welcome .composer-area {
+    margin-bottom: clamp(190px, 47vh, 460px);
+    padding-bottom: 0;
+    background: transparent;
   }
   /* 移动端：flex 纵向布局，聊天区占剩余空间，输入区固定在底部。
      不能用 block——conversation 的 height:100% 会撑满整个容器，
@@ -630,9 +662,19 @@ button {
       display: flex;
       flex-direction: column;
       /* 父级 app-shell 已是 flex column：这里不再设 height:100%
-         （会与 flex 收缩冲突），由 app-shell > .workspace 的
-         flex:1 + min-height:0 决定实际高度。 */
+       （会与 flex 收缩冲突），由 app-shell > .workspace 的
+       flex:1 + min-height:0 决定实际高度。 */
       min-height: 0;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .workspace-welcome .conversation-wrap {
+      overflow-y: auto;
+    }
+    .workspace-welcome .composer-area {
+      margin-bottom: 0;
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
     }
     .workspace > .conversation-wrap {
       flex: 1 1 auto;
@@ -661,10 +703,10 @@ button {
     flex-direction: column;
     min-width: 0;
     padding: 17px 12px 12px;
-    background: var(--color-surface);
+    background: transparent;
     border-right: 1px solid var(--color-line);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   .session-list {
     flex: 1;

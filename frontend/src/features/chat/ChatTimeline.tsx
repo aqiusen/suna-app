@@ -77,6 +77,8 @@ type ChatTimelineProps = {
   queueControlsDisabled?: boolean;
   onRemoveQueuedMessage?: (item: QueuedMessage) => void;
   onInterruptQueuedMessage?: (item: QueuedMessage) => void;
+  /** 无消息的新会话使用简洁欢迎态，避免展示任务建议卡。 */
+  welcome?: boolean;
 };
 
 export function ChatTimeline({
@@ -103,6 +105,7 @@ export function ChatTimeline({
   queueControlsDisabled = false,
   onRemoveQueuedMessage,
   onInterruptQueuedMessage,
+  welcome = false,
 }: ChatTimelineProps) {
   const t = useT();
   const [historyWindow, setHistoryWindow] = useState(80);
@@ -342,7 +345,7 @@ export function ChatTimeline({
 
   return (
     <div
-      className="conversation-wrap"
+      className={`conversation-wrap ${welcome ? "is-welcome" : ""}`}
       onKeyUp={updateSelectionAction}
       onMouseUp={updateSelectionAction}
       onScroll={onScroll}
@@ -381,7 +384,7 @@ export function ChatTimeline({
       )}
       <section
         aria-label={t("chat.timelineLabel")}
-        className="animate-[message-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both] mx-auto w-[min(860px,calc(100%-48px))] px-0 pt-8 pb-12 max-[720px]:w-[min(100%-28px,640px)] max-[720px]:pt-6 max-[720px]:pb-7"
+        className={`animate-[message-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both] mx-auto w-[min(860px,calc(100%-48px))] px-0 pt-8 pb-12 max-[720px]:w-[min(100%-28px,640px)] max-[720px]:pt-6 max-[720px]:pb-7 ${welcome ? "welcome-timeline" : ""}`}
         key={sessionId ?? "none"}
       >
         {loading && (
@@ -404,18 +407,27 @@ export function ChatTimeline({
           messages.length === 0 &&
           flow.length === 0 &&
           !showActivityCard && (
-            <div className="flex min-h-[300px] animate-[message-in_440ms_cubic-bezier(0.2,0.8,0.2,1)_both] flex-col items-center justify-center text-center">
-              {/* 空状态：单色图标 + 静态呈现，专业工具不做装饰性漂浮。 */}
-              <span className="grid h-12 w-12 place-items-center rounded-xl border border-line bg-surface-solid text-ink-muted">
-                <Icon name="sparkle" size={20} />
-              </span>
-              <h2 className="mt-4 mb-1.5 text-[17px] font-extrabold tracking-tight text-ink">
-                {t("chat.empty.title")}
-              </h2>
-              <p className="m-0 max-w-[300px] text-[12.5px] leading-relaxed text-ink-muted">
-                {t("chat.empty.desc")}
-              </p>
-              {onSuggestion && (
+            <div
+              className={`flex animate-[message-in_440ms_cubic-bezier(0.2,0.8,0.2,1)_both] flex-col items-center justify-center text-center ${welcome ? "welcome-greeting" : "min-h-[300px]"}`}
+            >
+              {welcome ? (
+                <h2 className="m-0 text-[25px] font-semibold text-ink max-[720px]:text-[20px]">
+                  {t("chat.welcome.greeting")}
+                </h2>
+              ) : (
+                <>
+                  <span className="grid h-12 w-12 place-items-center rounded-xl border border-line bg-surface-solid text-ink-muted">
+                    <Icon name="sparkle" size={20} />
+                  </span>
+                  <h2 className="mt-4 mb-1.5 text-[17px] font-extrabold tracking-tight text-ink">
+                    {t("chat.empty.title")}
+                  </h2>
+                  <p className="m-0 max-w-[300px] text-[12.5px] leading-relaxed text-ink-muted">
+                    {t("chat.empty.desc")}
+                  </p>
+                </>
+              )}
+              {!welcome && onSuggestion && (
                 <div className="mt-6 grid gap-2 text-left">
                   <button
                     className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-line bg-surface-solid px-3.5 py-2.5 text-left shadow-sm transition-[transform,border-color,box-shadow] duration-180 hover:-translate-y-px hover:border-blue/25 hover:shadow-md active:scale-[0.985]"

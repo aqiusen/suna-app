@@ -12,6 +12,18 @@ describe("ChatTimeline turn ordering", () => {
     vi.restoreAllMocks();
   });
 
+  it("uses the compact welcome state for an empty new session", () => {
+    render(
+      <LocaleProvider>
+        <ChatTimeline messages={[]} running={false} welcome />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText("Hi, what can I help you with?")).toBeTruthy();
+    expect(screen.queryByText("Start a task")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
   it("renders each response directly after its applied user message", () => {
     render(
       <LocaleProvider>
