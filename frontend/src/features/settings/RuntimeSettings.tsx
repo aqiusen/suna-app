@@ -129,7 +129,7 @@ export function RuntimeSettings({
     <section
       aria-label={t("settings.title")}
       aria-modal="true"
-      className={`runtime-settings flex flex-col overflow-hidden rounded-2xl border border-line bg-surface-solid shadow-lg ${
+      className={`runtime-settings flex flex-col overflow-hidden bg-surface-solid ${
         closing
           ? "pointer-events-none animate-[panel-out_180ms_cubic-bezier(0.2,0.8,0.2,1)_both]"
           : "animate-[panel-pop_220ms_cubic-bezier(0.2,0.8,0.2,1)_both]"

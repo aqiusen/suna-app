@@ -895,35 +895,25 @@ button {
     }
   }
 
-  /* 设置浮层：从侧栏左下角长出，内部左分类右内容（Codex 式）。 */
+  /* 设置是全窗口模态层：不保留工作台的任何可见或可交互区域。 */
   .runtime-settings {
     position: fixed;
-    left: 16px;
-    bottom: 16px;
-    width: min(780px, calc(100vw - 32px));
-    height: min(640px, calc(100dvh - 32px));
-    z-index: 8;
-    transform-origin: bottom left;
+    inset: 0;
+    z-index: 60;
+    width: auto;
+    height: auto;
+    transform-origin: center;
   }
-  /* 设置浮层点击外部关闭的遮罩：覆盖全屏但低于面板（z 7 < 8）。 */
+  /* 面板动画期间同样保持实色底层，防止工作台文字透出。 */
   .settings-scrim {
     position: fixed;
     inset: 0;
-    z-index: 7;
+    z-index: 59;
     width: 100%;
     height: 100%;
     padding: 0;
     border: 0;
-    background: color-mix(in srgb, var(--color-ink) 18%, transparent);
-  }
-  @media (max-width: 720px) {
-    .runtime-settings {
-      inset: 0;
-      width: auto;
-      height: auto;
-      border-radius: 0;
-      transform-origin: bottom center;
-    }
+    background: var(--color-surface-solid);
   }
 
   /* 移动端底部导航：仅窄屏显示，固定底部 + 安全区。 */
