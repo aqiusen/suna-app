@@ -733,10 +733,21 @@ const DICT: Dict = {
   "security.current": { zh: "当前", en: "Current" },
   "security.workspace": { zh: "工作目录", en: "Workspace" },
   "security.workspaceDesc": {
-    zh: "Suna 只能在此目录内执行操作，目录之外的操作会被拒绝。",
-    en: "Suna only operates inside this directory; actions outside are rejected.",
+    zh: "本地文件操作和命令受此目录边界限制；它不是操作系统级沙箱。",
+    en: "Local file operations and commands are limited to this directory; this is not an OS-level sandbox.",
   },
   "security.workspaceEmpty": { zh: "（未设置）", en: "(not set)" },
+  "security.workspacePath": { zh: "目录路径", en: "Directory path" },
+  "security.workspaceInputDesc": {
+    zh: "填写本机已存在的目录路径；支持 ~/ 开头。留空会关闭目录边界。",
+    en: "Enter an existing local directory; paths may start with ~/. Leave blank to disable the workspace boundary.",
+  },
+  "security.workspaceSave": { zh: "保存目录", en: "Save workspace" },
+  "security.workspaceSaving": { zh: "正在保存…", en: "Saving…" },
+  "security.workspaceClearConfirm": {
+    zh: "清空工作目录会关闭目录边界。仍要继续吗？",
+    en: "Clearing the workspace disables the directory boundary. Continue?",
+  },
   "security.mode.readonly": { zh: "只读", en: "Read-only" },
   "security.mode.readonlyDesc": {
     zh: "仅允许可证明只读的操作，其余直接拒绝，不询问",

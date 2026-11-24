@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useT } from "../../lib/i18n";
 import type { SettingsTabProps } from "./RuntimeSettings";
 
@@ -30,7 +30,13 @@ const GUARD_MODES = [
 export function SecurityTab({ config, onConfig, rpc }: SettingsTabProps) {
   const t = useT();
   const [error, setError] = useState<string>();
+  const [workspace, setWorkspace] = useState(config?.workspace ?? "");
+  const [workspaceError, setWorkspaceError] = useState<string>();
   const [saving, setSaving] = useState<string>();
+
+  useEffect(() => {
+    setWorkspace(config?.workspace ?? "");
+  }, [config?.workspace]);
 
   async function setMode(mode: string) {
     if (!config || saving) return;
@@ -44,6 +50,33 @@ export function SecurityTab({ config, onConfig, rpc }: SettingsTabProps) {
       onConfig(next);
     } catch (reason) {
       setError(
+        reason instanceof Error ? reason.message : t("security.error.save"),
+      );
+    } finally {
+      setSaving(undefined);
+    }
+  }
+
+  async function saveWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!config || saving || workspace === (config.workspace ?? "")) return;
+    if (
+      workspace.trim() === "" &&
+      config.workspace &&
+      !window.confirm(t("security.workspaceClearConfirm"))
+    )
+      return;
+
+    setSaving("workspace");
+    setWorkspaceError(undefined);
+    try {
+      const next = await rpc("config.set", {
+        action: "update_general",
+        workspace,
+      });
+      onConfig(next);
+    } catch (reason) {
+      setWorkspaceError(
         reason instanceof Error ? reason.message : t("security.error.save"),
       );
     } finally {
@@ -102,15 +135,78 @@ export function SecurityTab({ config, onConfig, rpc }: SettingsTabProps) {
       </section>
 
       <section className="rounded-xl border border-line bg-surface-raised/50 p-3.5">
-        <h3 className="m-0 text-[13px] font-extrabold text-ink">
+        <h3
+          className="m-0 text-[13px] font-extrabold text-ink"
+          id="security-workspace-title"
+        >
           {t("security.workspace")}
         </h3>
         <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">
           {t("security.workspaceDesc")}
         </p>
-        <code className="mt-2 block truncate rounded-lg bg-surface-raised px-2.5 py-2 font-mono text-[12px] text-ink">
-          {config.workspace || t("security.workspaceEmpty")}
-        </code>
+        <form
+          aria-labelledby="security-workspace-title"
+          className="mt-3 grid gap-2"
+          onSubmit={(event) => void saveWorkspace(event)}
+        >
+          <label
+            className="text-[12px] font-semibold text-ink-soft"
+            htmlFor="security-workspace-path"
+          >
+            {t("security.workspacePath")}
+          </label>
+          <input
+            aria-describedby={
+              workspaceError
+                ? "security-workspace-help security-workspace-error"
+                : "security-workspace-help"
+            }
+            aria-invalid={Boolean(workspaceError)}
+            autoCapitalize="none"
+            autoCorrect="off"
+            className="min-w-0 rounded-lg border border-line bg-surface-raised px-2.5 py-2 font-mono text-[12px] text-ink outline-none focus:border-blue"
+            enterKeyHint="done"
+            id="security-workspace-path"
+            name="workspace"
+            onChange={(event) => {
+              setWorkspace(event.target.value);
+              setWorkspaceError(undefined);
+            }}
+            placeholder={t("security.workspaceEmpty")}
+            spellCheck={false}
+            type="text"
+            value={workspace}
+          />
+          <small
+            className="text-[11px] leading-relaxed text-ink-muted"
+            id="security-workspace-help"
+          >
+            {t("security.workspaceInputDesc")}
+          </small>
+          {workspaceError && (
+            <small
+              aria-live="polite"
+              className="text-[12px] font-semibold text-rose"
+              id="security-workspace-error"
+              role="alert"
+            >
+              {workspaceError}
+            </small>
+          )}
+          <div className="flex justify-end">
+            <button
+              className="cursor-pointer rounded-lg border border-line bg-surface-raised px-3 py-1.5 text-[12px] font-bold text-ink-soft transition-colors duration-150 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={
+                saving !== undefined || workspace === (config.workspace ?? "")
+              }
+              type="submit"
+            >
+              {saving === "workspace"
+                ? t("security.workspaceSaving")
+                : t("security.workspaceSave")}
+            </button>
+          </div>
+        </form>
       </section>
     </div>
   );
