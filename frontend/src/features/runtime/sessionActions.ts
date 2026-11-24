@@ -9,6 +9,7 @@ import {
   messageId,
 } from "./sessionState";
 import type { ActiveData, QueuedMessage, Scope } from "./sessionState";
+import { restorableCompactState } from "./snapshotState";
 
 type Rpc = ReturnType<typeof useRuntimeBridge>["rpc"];
 
@@ -76,7 +77,7 @@ export function createSessionActions({
           ...blankActive(),
           snapshot,
           flow: [],
-          toolSummary: snapshot.tool_summary,
+          compact: restorableCompactState(snapshot.compact),
         });
         mergeSession(snapshot.session);
         toast("success", t("action.sessionCreated"));
@@ -247,7 +248,6 @@ export function createSessionActions({
         ...snapshot,
         messages: value.snapshot?.messages ?? snapshot.messages,
       },
-      toolSummary: snapshot.tool_summary ?? value.toolSummary,
     }));
     mergeSession(snapshot.session);
     await loadSessions();
@@ -276,7 +276,6 @@ export function createSessionActions({
           ...snapshot,
           messages: value.snapshot?.messages ?? snapshot.messages,
         },
-        toolSummary: snapshot.tool_summary ?? value.toolSummary,
       }));
       mergeSession(snapshot.session);
       await loadSessions();
@@ -355,7 +354,7 @@ export function createSessionActions({
             ...blankActive(),
             snapshot,
             flow: flowFromSnapshot(snapshot),
-            toolSummary: snapshot.tool_summary,
+            compact: restorableCompactState(snapshot.compact),
             ask: snapshot.current_run?.pending_ask,
             guard: snapshot.current_run?.pending_guard,
           });
@@ -417,7 +416,7 @@ export function createSessionActions({
             ...blankActive(),
             snapshot,
             flow: flowFromSnapshot(snapshot),
-            toolSummary: snapshot.tool_summary,
+            compact: restorableCompactState(snapshot.compact),
             ask: snapshot.current_run?.pending_ask,
             guard: snapshot.current_run?.pending_guard,
           });

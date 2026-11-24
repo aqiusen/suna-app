@@ -5,7 +5,6 @@ import type {
   SkillFlowItem,
   SubtaskFlowItem,
   ToolFlowItem,
-  ToolSummary,
 } from "../../lib/runtimeBridge";
 
 /** 格式化工具耗时：不足 1 秒显示毫秒，超过显示秒（一位小数）。 */
@@ -49,6 +48,16 @@ export function ToolRow({ item }: { item: ToolFlowItem }) {
       text: "text-green",
     },
     failed: { dot: "bg-rose", label: t("tool.failed"), text: "text-rose" },
+    cancelled: {
+      dot: "bg-ink-muted",
+      label: t("tool.cancelled"),
+      text: "text-ink-muted",
+    },
+    unknown: {
+      dot: "bg-ink-muted",
+      label: t("tool.unknown"),
+      text: "text-ink-muted",
+    },
   }[status];
   const hasDetail =
     Boolean(item.params && Object.keys(item.params).length > 0) ||
@@ -88,6 +97,11 @@ export function ToolRow({ item }: { item: ToolFlowItem }) {
         {status !== "success" && (
           <span className={`shrink-0 text-[11px] ${statusMeta.text}`}>
             {statusMeta.label}
+          </span>
+        )}
+        {item.compacted && (
+          <span className="shrink-0 text-[10px] text-ink-muted">
+            {t("tool.compacted")}
           </span>
         )}
         {hasDetail && (
@@ -324,64 +338,6 @@ export function SubtaskCard({ item }: { item: SubtaskFlowItem }) {
           )}
         </div>
       )}
-    </article>
-  );
-}
-
-/** 快照兜底的工具汇总：默认收起，避免 HTTP 状态行占对话主区。 */
-export function ToolSummaryCard({ summary }: { summary: ToolSummary }) {
-  const t = useT();
-  const [expanded, setExpanded] = useState(false);
-  const recent = summary.recent?.slice(0, 4) ?? [];
-  return (
-    <article className="mb-7 max-w-[520px] overflow-hidden rounded-lg border border-transparent transition-colors duration-150 hover:border-line hover:bg-surface-subtle/60">
-      <button
-        aria-expanded={expanded}
-        className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2 py-[6px] text-left disabled:cursor-default"
-        disabled={recent.length === 0}
-        onClick={() => setExpanded((value) => !value)}
-        type="button"
-      >
-        <Icon
-          className={`shrink-0 text-ink-muted transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
-          name="chevron-right"
-          size={12}
-        />
-        <Icon className="shrink-0 text-ink-muted" name="tool" size={13} />
-        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink">
-          {t("toolSummary.title")}
-        </span>
-        <span className="shrink-0 text-[10.5px] text-ink-muted">
-          {t("toolSummary.total", {
-            total: summary.total,
-            success: summary.success,
-          })}
-          {summary.failed > 0 && (
-            <span className="text-rose">
-              {" "}
-              {t("toolSummary.failed", { failed: summary.failed })}
-            </span>
-          )}
-        </span>
-      </button>
-      {expanded &&
-        recent.map((tool, index) => (
-          <div
-            className="flex items-center gap-2 border-t border-line/60 px-2 py-2 text-[11px]"
-            key={`${tool.tool}-${index}`}
-          >
-            <span
-              aria-hidden="true"
-              className={`h-[6px] w-[6px] shrink-0 rounded-full ${tool.status === "success" ? "bg-green" : tool.status === "failed" ? "bg-rose" : "bg-ink-muted"}`}
-            />
-            <code className="shrink-0 font-mono text-[11px] font-semibold text-ink">
-              {tool.tool}
-            </code>
-            {tool.summary && (
-              <span className="truncate text-ink-muted">{tool.summary}</span>
-            )}
-          </div>
-        ))}
     </article>
   );
 }

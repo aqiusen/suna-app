@@ -7,10 +7,9 @@ import type {
   AgentRunEvent,
   AgentUsageEvent,
   AskUserEvent,
-  CompactResultEvent,
+  CompactStateEvent,
   GuardConfirmEvent,
   RuntimeConfig,
-  ToolSummary,
   UsagePeriod,
 } from "../../lib/runtimeBridge";
 
@@ -24,11 +23,10 @@ type RunDetailsProps = {
   run?: AgentRunEvent;
   usage?: AgentUsageEvent;
   totals?: UsagePeriod;
-  toolSummary?: ToolSummary;
   ask?: AskUserEvent;
   guard?: GuardConfirmEvent;
-  /** 压缩过程/结果（由 session.compact_result 驱动）。 */
-  compact?: CompactResultEvent;
+  /** 压缩过程/结果（由 session.compact_state 驱动）。 */
+  compact?: CompactStateEvent;
   config?: RuntimeConfig;
   modelRef?: string;
   canConfigure: boolean;
@@ -292,7 +290,8 @@ export function RunDetails(props: RunDetailsProps) {
                   controlsDisabled ||
                   status === "running" ||
                   status === "compacting" ||
-                  compact?.running
+                  compact?.state === "preparing" ||
+                  compact?.state === "ready"
                 }
                 onClick={() => void act(onCompact)}
                 type="button"
@@ -301,31 +300,37 @@ export function RunDetails(props: RunDetailsProps) {
               </button>
             </div>
             {/* 压缩过程/结果：running 动画 → 完成结果（N→M tokens）→ 失败错误 */}
-            {compact?.running ? (
+            {compact?.state === "preparing" ? (
               <div className="mb-2 flex items-center gap-2 rounded-lg border border-blue/25 bg-blue-soft/40 px-2.5 py-2 text-[12px] font-bold text-blue-strong">
                 <ActivityDots />
                 {t("run.compactingNow")}
               </div>
-            ) : compact?.error ? (
-              <div className="mb-2 rounded-lg border border-rose/25 bg-rose/10 px-2.5 py-2 text-[12px] font-semibold text-rose">
-                {t("run.compactFailed", { error: compact.error })}
+            ) : compact?.state === "ready" ? (
+              <div className="mb-2 rounded-lg border border-line bg-surface-raised/60 px-2.5 py-2 text-[12px] font-semibold text-ink-muted">
+                {t("compact.ready")}
               </div>
-            ) : compact?.noop ? (
+            ) : compact?.state === "failed" ? (
+              <div className="mb-2 rounded-lg border border-rose/25 bg-rose/10 px-2.5 py-2 text-[12px] font-semibold text-rose">
+                {t("run.compactFailed", {
+                  error:
+                    compact.error ?? compact.reason ?? t("run.requestFailed"),
+                })}
+              </div>
+            ) : compact?.state === "skipped" ? (
               <div className="mb-2 rounded-lg border border-line bg-surface-raised/60 px-2.5 py-2 text-[12px] font-semibold text-ink-muted">
                 {t("run.compactNoop")}
               </div>
-            ) : compact ? (
+            ) : compact?.state === "cancelled" ? (
+              <div className="mb-2 rounded-lg border border-line bg-surface-raised/60 px-2.5 py-2 text-[12px] font-semibold text-ink-muted">
+                {t("compact.cancelled")}
+              </div>
+            ) : compact?.state === "applied" ? (
               <div className="mb-2 rounded-lg border border-green/25 bg-green-soft/40 px-2.5 py-2 text-[12px] font-semibold text-ink">
                 <span className="font-bold text-green">✓</span>{" "}
                 {t("run.compacted", {
-                  before: tokenCount(compact.before_tokens),
-                  after: tokenCount(compact.after_tokens),
+                  before: tokenCount(compact.result?.before_tokens),
+                  after: tokenCount(compact.result?.after_tokens),
                 })}
-                {compact.turns_compressed
-                  ? ` · ${t("run.turnsCompressed", {
-                      count: compact.turns_compressed,
-                    })}`
-                  : ""}
               </div>
             ) : null}
             <div className="flex items-center justify-between border-b border-line py-2 text-[13px]">

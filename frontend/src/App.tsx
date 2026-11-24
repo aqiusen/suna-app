@@ -366,6 +366,7 @@ function AppShell() {
               }
               guard={active.guard}
               loading={syncing}
+              compact={active.compact}
               messages={messages}
               onAskReply={(id, answer) =>
                 queueSessionOperation(() =>
@@ -393,7 +394,6 @@ function AppShell() {
               queuedMessages={active.queuedMessages}
               queueControlsDisabled={syncing}
               sessionId={active.snapshot?.session.id}
-              toolSummary={active.toolSummary}
               welcome={isWelcome}
             />
             <Composer
@@ -489,6 +489,10 @@ function AppShell() {
       <CommandPaletteOverlay
         canCompact={
           Boolean(selected) &&
+          cap("session.compact") &&
+          Boolean(
+            hello?.catalog.notifications.includes("session.compact_state"),
+          ) &&
           !sessionActionsFrozen &&
           !running &&
           selected?.status !== "compacting"

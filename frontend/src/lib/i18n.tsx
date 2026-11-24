@@ -415,6 +415,9 @@ const DICT: Dict = {
   "tool.guard": { zh: "等待授权", en: "Awaiting approval" },
   "tool.success": { zh: "完成", en: "Done" },
   "tool.failed": { zh: "失败", en: "Failed" },
+  "tool.cancelled": { zh: "已取消", en: "Cancelled" },
+  "tool.unknown": { zh: "状态未知", en: "Status unknown" },
+  "tool.compacted": { zh: "历史工具", en: "Observed tool" },
   "skill.loading": { zh: "加载中", en: "Loading" },
   "skill.reviewing": { zh: "校验中", en: "Reviewing" },
   "skill.loaded": { zh: "已加载", en: "Loaded" },
@@ -423,12 +426,6 @@ const DICT: Dict = {
   "subtask.running": { zh: "运行中", en: "Running" },
   "subtask.success": { zh: "完成", en: "Done" },
   "subtask.failed": { zh: "失败", en: "Failed" },
-  "toolSummary.title": { zh: "工具执行", en: "Tool activity" },
-  "toolSummary.total": {
-    zh: "共 {total} 次 · {success} 成功",
-    en: "{total} runs · {success} succeeded",
-  },
-  "toolSummary.failed": { zh: "· {failed} 失败", en: "· {failed} failed" },
   // 状态条 / 运行详情
   "run.title": { zh: "状态与用量", en: "Status & usage" },
   "run.currentSession": { zh: "当前会话", en: "Current session" },
@@ -471,6 +468,26 @@ const DICT: Dict = {
   "run.compactNoop": {
     zh: "上下文足够短，无需压缩。",
     en: "Context is short enough; no need to compact.",
+  },
+  "compact.preparing": {
+    zh: "正在整理工具历史…",
+    en: "Preparing tool history…",
+  },
+  "compact.ready": {
+    zh: "工具历史整理已就绪，尚未采用。",
+    en: "Tool history is ready, but has not been applied.",
+  },
+  "compact.applied": {
+    zh: "上下文整理已采用。",
+    en: "Context update applied.",
+  },
+  "compact.skipped": {
+    zh: "本次未应用上下文整理。",
+    en: "Context update was skipped.",
+  },
+  "compact.cancelled": {
+    zh: "上下文整理已取消。",
+    en: "Context update was cancelled.",
   },
   "run.compacted": {
     zh: "✓ 已压缩 {before} → {after} tokens",

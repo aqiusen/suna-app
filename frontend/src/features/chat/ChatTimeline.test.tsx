@@ -192,32 +192,42 @@ describe("ChatTimeline turn ordering", () => {
     );
   });
 
-  it("keeps snapshot tool activity collapsed until opened", () => {
+  it("renders restored compacted tool observations as historical rows", () => {
     render(
       <LocaleProvider>
         <ChatTimeline
-          messages={[]}
-          running={false}
-          toolSummary={{
-            total: 37,
-            success: 36,
-            failed: 1,
-            recent: [
-              {
-                tool: "http",
-                status: "success",
-                summary: "Status: 200 200 OK | Headers:",
-              },
-            ],
+          messages={[
+            {
+              id: "snapshot:1",
+              role: "assistant",
+              content: "I checked the repository.",
+              historicalTools: [
+                {
+                  id: "snapshot-observed:1:0",
+                  tool: "readfile",
+                  intent: "Inspect source",
+                  status: "success",
+                  compacted: true,
+                },
+              ],
+            },
+          ]}
+          compact={{
+            session_id: "s1",
+            compact_id: "c1",
+            state: "ready",
           }}
+          running={false}
         />
       </LocaleProvider>,
     );
 
-    expect(screen.getByText("Tool activity")).toBeTruthy();
-    expect(screen.queryByText("Status: 200 200 OK | Headers:")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /tool activity/i }));
-    expect(screen.getByText("Status: 200 200 OK | Headers:")).toBeTruthy();
+    expect(screen.getByText("readfile")).toBeTruthy();
+    expect(screen.getByText("Inspect source")).toBeTruthy();
+    expect(screen.getByText("Observed tool")).toBeTruthy();
+    expect(
+      screen.getByText("Tool history is ready, but has not been applied."),
+    ).toBeTruthy();
   });
 
   it("offers selected text as composer context", async () => {

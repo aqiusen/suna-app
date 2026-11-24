@@ -2,16 +2,18 @@ import type {
   AgentRunEvent,
   AgentUsageEvent,
   AskUserEvent,
-  CompactResultEvent,
+  CompactStateEvent,
   FlowSegment,
   GuardConfirmEvent,
   MessagePart,
-  SnapshotMessage,
   SessionSnapshot,
   SessionStatus,
   ToolStartEvent,
-  ToolSummary,
 } from "../../lib/runtimeBridge";
+import { restoreSnapshotMessages } from "./snapshotState";
+import type { TimelineMessage } from "./snapshotState";
+
+export type { TimelineMessage } from "./snapshotState";
 
 /** 会话操作的作用域：attach 意图序号 + 会话 + 可选 run_id。 */
 export type Scope = {
@@ -30,8 +32,6 @@ export type QueuedMessage = {
 /** 每个运行中用户回合在叙事流中的起点，用于稳定交错渲染消息与执行过程。 */
 /** 时间线中一个用户回合的稳定槽位；运行过程只能写入其所属槽位。 */
 export type FlowTurn = { flowStart: number; turnId: string; runId?: string };
-export type TimelineMessage = SnapshotMessage & { id: string };
-
 /** 当前选中会话的活跃状态：快照、按序叙事流与待处理交互。 */
 export type ActiveData = {
   snapshot?: SessionSnapshot;
@@ -43,10 +43,9 @@ export type ActiveData = {
   run?: AgentRunEvent;
   ask?: AskUserEvent;
   guard?: GuardConfirmEvent;
-  toolSummary?: ToolSummary;
   activeTool?: ToolStartEvent & { status?: "running" | "guard" | "failed" };
-  /** 最近一次压缩（compact）的过程/结果：由 session.compact_result 驱动。 */
-  compact?: CompactResultEvent;
+  /** 最近一次压缩状态，按 compact_id 合并 Runtime 通知。 */
+  compact?: CompactStateEvent;
   pendingUsers: PendingUserMessage[];
   /** 用户已输入但尚未到发送时机的本地 FIFO。 */
   queuedMessages: QueuedMessage[];
@@ -117,11 +116,12 @@ export function appendFlowTurn(value: ActiveData, turnId: string): FlowTurn[] {
 }
 
 export function timelineMessages(value: ActiveData): TimelineMessage[] {
+  const history = restoreSnapshotMessages(
+    value.snapshot?.messages,
+    value.snapshot?.session.status,
+  );
   return [
-    ...(value.snapshot?.messages ?? []).map((message, index) => ({
-      ...message,
-      id: `snapshot:${index}`,
-    })),
+    ...history,
     ...value.pendingUsers.map((message) => ({
       role: "user",
       content: message.content,

@@ -10,6 +10,7 @@ import type {
 import { t } from "../../lib/i18n";
 import { appendFlowTurn, messageId } from "./sessionState";
 import type { ActiveData, Scope } from "./sessionState";
+import { mergeCompactState, parseCompactState } from "./snapshotState";
 
 /** 单个 run 的时间线工具卡上限：超出丢弃最旧，避免超长 run 累积 DOM。 */
 const MAX_TOOL_CARDS = 24;
@@ -308,7 +309,7 @@ export function createNotificationHandler({
           startedAt: receivedAt,
         };
         // 单 run 工具卡硬上限：超长 run 会累积大量 DOM，丢弃最旧的
-        // 工具段保持叙事顺序，历史细节由 toolSummary 统计兜底。
+        // 实时工具段保持叙事顺序；已完成历史由 attach 快照恢复。
         const toolCount = flow.filter(
           (segment) => segment.kind === "tool",
         ).length;
@@ -545,11 +546,14 @@ export function createNotificationHandler({
       });
       return;
     }
-    // 压缩（compact）过程/结果：running=true 进入压缩中，running=false
-    // 显示结果或错误。事件为全局通知，按当前作用域过滤。
-    if (event.method === "session.compact_result") {
-      if (!acceptsSession(event.params.session_id)) return;
-      setActive((value) => ({ ...value, compact: event.params }));
+    // 压缩状态按 compact_id 幂等合并；通知乱序时不能让进度覆盖终态。
+    if (event.method === "session.compact_state") {
+      const compact = parseCompactState(event.params);
+      if (!compact || !acceptsSession(compact.session_id)) return;
+      setActive((value) => ({
+        ...value,
+        compact: mergeCompactState(value.compact, compact),
+      }));
       return;
     }
     if (event.method === "session.user_message") {

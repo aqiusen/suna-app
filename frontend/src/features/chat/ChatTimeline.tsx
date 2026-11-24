@@ -9,9 +9,9 @@ import { Icon } from "../../components/Icon";
 import type {
   AgentRunEvent,
   AskUserEvent,
+  CompactStateEvent,
   FlowSegment,
   GuardConfirmEvent,
-  ToolSummary,
 } from "../../lib/runtimeBridge";
 import {
   activityCopy,
@@ -22,7 +22,7 @@ import {
 } from "./activity";
 import { DecisionCard } from "./decisionCard";
 import { LONG_MESSAGE_THRESHOLD, LongMessage } from "./longMessage";
-import { SkillCard, SubtaskCard, ToolCard, ToolSummaryCard } from "./toolCards";
+import { SkillCard, SubtaskCard, ToolCard } from "./toolCards";
 import { LazyMarkdown } from "./LazyMarkdown";
 import { QueuedMessages } from "./QueuedMessages";
 import { useT } from "../../lib/i18n";
@@ -51,8 +51,8 @@ type ChatTimelineProps = {
   pending?: boolean;
   /** 当前正在执行的 Runtime 工具（由应用壳提供时）。 */
   activeTool?: ActiveTool;
-  /** 当前会话的工具执行汇总。 */
-  toolSummary?: ToolSummary;
+  /** Runtime 最近一次压缩状态。 */
+  compact?: CompactStateEvent;
   /** 待处理的用户决策，内嵌渲染在时间线中。 */
   ask?: AskUserEvent;
   guard?: GuardConfirmEvent;
@@ -90,7 +90,7 @@ export function ChatTimeline({
   run,
   pending,
   activeTool,
-  toolSummary,
+  compact,
   ask,
   guard,
   onAskReply,
@@ -539,6 +539,17 @@ export function ChatTimeline({
                       )}
                     </div>
                   </article>
+                  {message.historicalTools?.length ? (
+                    <div
+                      aria-label={t("chat.processLabel")}
+                      className="ml-7 space-y-0.5"
+                      role="group"
+                    >
+                      {message.historicalTools.map((item) => (
+                        <ToolCard item={item} key={item.id} />
+                      ))}
+                    </div>
+                  ) : null}
                   {turnFlow.length > 0 && renderFlow(turnFlow)}
                   {message.id === activeTurnId && runErrorNotice}
                   {message.id === activeTurnId && activityCard}
@@ -559,10 +570,9 @@ export function ChatTimeline({
           renderFlow(flow.filter((_, index) => !anchoredFlow.has(index)))}
         {!loading && !activeTurnId && runErrorNotice}
         {!loading && !activeTurnId && activityCard}
-        {!loading &&
-          flow.filter((segment) => segment.kind === "tool").length === 0 &&
-          toolSummary &&
-          toolSummary.total > 0 && <ToolSummaryCard summary={toolSummary} />}
+        {!loading && compact && compact.wait !== "hard_limit" && (
+          <CompactStateNotice compact={compact} />
+        )}
         {onRemoveQueuedMessage &&
           onInterruptQueuedMessage &&
           !loading &&
@@ -586,6 +596,55 @@ export function ChatTimeline({
         </button>
       )}
     </div>
+  );
+}
+
+function CompactStateNotice({ compact }: { compact: CompactStateEvent }) {
+  const t = useT();
+  let message: string;
+  switch (compact.state) {
+    case "preparing":
+      message = t("compact.preparing");
+      break;
+    case "ready":
+      message = t("compact.ready");
+      break;
+    case "applied":
+      message = compact.result
+        ? t("run.compacted", {
+            before: Intl.NumberFormat("en", { notation: "compact" }).format(
+              compact.result.before_tokens,
+            ),
+            after: Intl.NumberFormat("en", { notation: "compact" }).format(
+              compact.result.after_tokens,
+            ),
+          })
+        : t("compact.applied");
+      break;
+    case "skipped":
+      message = t("compact.skipped");
+      break;
+    case "failed":
+      message = t("run.compactFailed", {
+        error: compact.error ?? compact.reason ?? t("run.requestFailed"),
+      });
+      break;
+    case "cancelled":
+      message = t("compact.cancelled");
+      break;
+  }
+  return (
+    <p
+      aria-live="polite"
+      className="my-3 flex items-center gap-2 text-[11px] font-medium text-ink-muted"
+      role="status"
+    >
+      <Icon
+        name={compact.state === "failed" ? "warning" : "sparkle"}
+        size={13}
+      />
+      <span>{message}</span>
+    </p>
   );
 }
 

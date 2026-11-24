@@ -49,20 +49,26 @@ export type SessionInfo = {
   client_count: number;
 };
 
-export type SnapshotMessage = { role: string; content: string };
-export type ToolSummaryItem = {
-  tool: string;
-  status: string;
-  summary?: string;
+export type SnapshotToolCall = {
+  id: string;
+  name: string;
+  arguments: string;
+  intent?: string;
 };
-export type ToolSummary = {
-  total: number;
-  success: number;
-  failed: number;
-  changes?: { tool: string; count: number }[];
-  failures?: ToolSummaryItem[];
-  recent?: ToolSummaryItem[];
-  omitted?: number;
+export type SnapshotToolLabel = {
+  name: string;
+  intent?: string;
+  status?: string;
+};
+export type SnapshotMessage = {
+  role: string;
+  content: string;
+  kind?: "text" | "media";
+  tool_calls?: SnapshotToolCall[];
+  tool_call_id?: string;
+  tool_status?: string;
+  observed_tools?: SnapshotToolLabel[];
+  truncated?: boolean;
 };
 export type CurrentRun = {
   /** Present for an active run; used to reject notifications from a prior attach. */
@@ -81,7 +87,7 @@ export type SessionSnapshot = {
   session: SessionInfo;
   messages?: SnapshotMessage[];
   compacted?: boolean;
-  tool_summary?: ToolSummary;
+  compact?: CompactStateEvent;
   current_run?: CurrentRun;
 };
 
@@ -175,7 +181,8 @@ export type ToolFlowItem = {
   tool: string;
   intent?: string;
   params?: JSONRecord;
-  status: "running" | "guard" | "success" | "failed";
+  status: "running" | "guard" | "success" | "failed" | "cancelled" | "unknown";
+  compacted?: boolean;
   result?: string;
   resultTruncated?: boolean;
   error?: boolean;
@@ -243,17 +250,20 @@ export type GuardConfirmEvent = {
   session_id?: string;
   can_reply: boolean;
 };
-export type CompactResultEvent = {
-  session_id?: string;
-  /** 压缩进行中（running=true 时其余字段可省略）。 */
-  before_tokens?: number;
-  after_tokens?: number;
-  context_window?: number;
-  turns_compressed?: number;
-  summary_tokens?: number;
-  truncated_outputs?: number;
-  noop?: boolean;
-  running?: boolean;
+export type CompactStateEvent = {
+  session_id: string;
+  compact_id: string;
+  kind?: "tools" | "history" | "mixed";
+  state: "preparing" | "ready" | "applied" | "skipped" | "failed" | "cancelled";
+  wait?: "manual" | "hard_limit";
+  prepare_elapsed_ms?: number;
+  wait_elapsed_ms?: number;
+  result?: {
+    before_tokens: number;
+    after_tokens: number;
+    context_window: number;
+  };
+  reason?: string;
   error?: string;
 };
 
@@ -470,7 +480,7 @@ export type RuntimeNotifications = {
     parts?: MessagePart[];
   };
   "session.updated": { session: SessionInfo };
-  "session.compact_result": CompactResultEvent;
+  "session.compact_state": CompactStateEvent;
   "config.state": RuntimeConfig;
   "config.models_result": {
     provider: string;

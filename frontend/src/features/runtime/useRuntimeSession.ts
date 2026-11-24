@@ -32,6 +32,7 @@ import {
   timelineMessages,
 } from "./sessionState";
 import type { ActiveData, QueuedMessage, Scope } from "./sessionState";
+import { restorableCompactState } from "./snapshotState";
 
 /**
  * 会话工作区核心状态 hook：管理 Runtime bridge、会话目录、当前 attach、
@@ -599,12 +600,11 @@ export function useRuntimeSession() {
         const cached = sessionViewsRef.current.get(id);
         setActive({
           snapshot,
-          // attach snapshot 的 messages 已含已完成的历史，绝不能与页面缓存的
-          // completed flow 混用。current_run 只恢复尚未落库的实时 buffer；
-          // snapshot 不保证工具事件回放，因此旧工具卡在切回后不保留。
+          // attach snapshot 是有效历史的权威投影；历史工具由 timelineMessages
+          // 从快照恢复，flow 只承载当前 run 尚未落库的实时 buffer。
           flow: flowFromSnapshot(snapshot),
           flowTurns: flowTurnsFromSnapshot(snapshot),
-          toolSummary: snapshot.tool_summary,
+          compact: restorableCompactState(snapshot.compact),
           ask: snapshot.current_run?.pending_ask,
           guard: snapshot.current_run?.pending_guard,
           // attach 是 Runtime 权威 snapshot 的交接点：此前本页临时追加的

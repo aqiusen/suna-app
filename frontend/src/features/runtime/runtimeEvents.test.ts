@@ -633,40 +633,47 @@ describe("createNotificationHandler", () => {
     );
   });
 
-  it("tracks compact progress then result", () => {
+  it("tracks compact state through an applied result", () => {
     const { send, getActive } = createHarness();
     send({
-      method: "session.compact_result",
-      params: { session_id: "s1", running: true },
-    });
-    expect(getActive().compact?.running).toBe(true);
-
-    send({
-      method: "session.compact_result",
+      method: "session.compact_state",
       params: {
         session_id: "s1",
-        before_tokens: 162000,
-        after_tokens: 45000,
-        context_window: 1000000,
-        turns_compressed: 12,
-        summary_tokens: 3000,
-        truncated_outputs: 0,
-        running: false,
+        compact_id: "compact-1",
+        kind: "tools",
+        state: "preparing",
+      },
+    });
+    expect(getActive().compact?.state).toBe("preparing");
+
+    send({
+      method: "session.compact_state",
+      params: {
+        session_id: "s1",
+        compact_id: "compact-1",
+        kind: "tools",
+        state: "applied",
+        result: {
+          before_tokens: 162000,
+          after_tokens: 45000,
+          context_window: 1000000,
+        },
       },
     });
     const compact = getActive().compact;
-    expect(compact?.running).toBe(false);
-    expect(compact?.before_tokens).toBe(162000);
-    expect(compact?.after_tokens).toBe(45000);
+    expect(compact?.state).toBe("applied");
+    expect(compact?.result?.before_tokens).toBe(162000);
+    expect(compact?.result?.after_tokens).toBe(45000);
   });
 
   it("tracks compact failure and ignores for other sessions", () => {
     const { deps, send, getActive } = createHarness();
     send({
-      method: "session.compact_result",
+      method: "session.compact_state",
       params: {
         session_id: "s1",
-        running: false,
+        compact_id: "compact-1",
+        state: "failed",
         error: "context too large",
       },
     });
@@ -675,10 +682,27 @@ describe("createNotificationHandler", () => {
     // 上游 Runtime 通过 session_id 标记压缩事件，其他会话不能覆盖当前面板。
     deps.acceptsSession.mockImplementation((id) => id === "s1");
     send({
-      method: "session.compact_result",
-      params: { session_id: "other", running: true },
+      method: "session.compact_state",
+      params: {
+        session_id: "other",
+        compact_id: "compact-2",
+        state: "preparing",
+      },
     });
-    expect(getActive().compact?.running).toBe(false);
+    expect(getActive().compact?.state).toBe("failed");
+  });
+
+  it("does not let late compact progress replace its terminal event", () => {
+    const { send, getActive } = createHarness();
+    send({
+      method: "session.compact_state",
+      params: { session_id: "s1", compact_id: "compact-1", state: "applied" },
+    });
+    send({
+      method: "session.compact_state",
+      params: { session_id: "s1", compact_id: "compact-1", state: "preparing" },
+    });
+    expect(getActive().compact?.state).toBe("applied");
   });
 
   it("groups namespaced subtask tools under the spawn segment", () => {
